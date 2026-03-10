@@ -26,7 +26,9 @@ if ! mkdir "$LOCKFILE" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKFILE" 2>/dev/null' EXIT INT TERM
 
+ROLLUP_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo "=== Axon Rollup: $PROJECT ($TODAY) ==="
+echo "[axon-rollup] start=$ROLLUP_START project=$PROJECT"
 echo ""
 
 # Step 1: Collect dendrites (don't update .last-collection yet — wait for rollup success)
@@ -150,6 +152,7 @@ if [[ -z "$ROLLUP_TEXT" ]] || [[ "$ROLLUP_TEXT" == "null" ]]; then
     echo "ERROR: Rollup generation failed."
     [[ -s "$CLAUDE_STDERR" ]] && echo "Claude stderr:" && cat "$CLAUDE_STDERR"
     echo "$ROLLUP_RESULT" | jq '.' 2>/dev/null || echo "$ROLLUP_RESULT"
+    echo "[axon-rollup] end=$(date -u +"%Y-%m-%dT%H:%M:%SZ") project=$PROJECT status=failed error=claude_empty"
     rm -f "$CLAUDE_STDERR"
     exit 1
 fi
@@ -217,10 +220,12 @@ fi
 
 # Show cost
 COST=$(echo "$ROLLUP_RESULT" | jq '.total_cost_usd // empty' 2>/dev/null)
+ROLLUP_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo ""
 echo "=== Done ==="
 echo "  Rollup:  $EPISODE_FILE"
 echo "  State:   $WORKSPACE/state.md"
 echo "  Cost:    \$${COST:-unknown}"
+echo "[axon-rollup] end=$ROLLUP_END project=$PROJECT episode=$(basename "$EPISODE_FILE") cost=${COST:-unknown} status=success"
 echo ""
 echo "Run 'axon morning --project $PROJECT' tomorrow for your briefing."

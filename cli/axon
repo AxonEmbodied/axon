@@ -5,7 +5,7 @@
 set -euo pipefail
 
 AXON_HOME="${AXON_HOME:-$HOME/.axon}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
 PROTOCOL="$SCRIPT_DIR/../protocol.md"
 
 # Allow running from within Claude Code sessions

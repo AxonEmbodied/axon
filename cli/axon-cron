@@ -79,7 +79,7 @@ case "$(uname)" in
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin</string>
         <key>HOME</key>
         <string>$HOME</string>
     </dict>
