@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useProjectStore } from '@/store/projectStore'
+import { useBackend } from '@/providers/DataProvider'
 import { formatDate } from '@/lib/utils'
 
 interface ProjectConfig {
@@ -76,6 +77,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export function SettingsView() {
   const { projects, activeProject } = useProjectStore()
+  const backend = useBackend()
   const [config, setConfig] = useState<ProjectConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -88,13 +90,9 @@ export function SettingsView() {
     }
     setLoading(true)
     setError(null)
-    fetch(`/api/axon/projects/${encodeURIComponent(activeProject)}/config`)
-      .then(r => {
-        if (!r.ok) throw new Error(`Failed to load config (${r.status})`)
-        return r.json()
-      })
-      .then(data => {
-        setConfig(parseConfig(data.content))
+    backend.getConfig(activeProject)
+      .then(content => {
+        setConfig(parseConfig(content))
         setLoading(false)
       })
       .catch(e => {

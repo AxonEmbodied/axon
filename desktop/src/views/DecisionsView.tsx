@@ -2,11 +2,11 @@ import { useState, useMemo, useEffect } from 'react'
 import { useProjectStore } from '@/store/projectStore'
 import { useRollups } from '@/hooks/useRollups'
 import { useUIStore } from '@/store/uiStore'
-import { parseFrontmatter, parseDecisionTraces } from '@/lib/parser'
+import { useBackend } from '@/providers/DataProvider'
+import { parseFrontmatter, parseDecisionTraces, extractSummary } from '@/lib/parser'
 import { formatDate } from '@/lib/utils'
 import { Search, Globe, FolderOpen } from 'lucide-react'
 import type { RollupEpisode, RollupFrontmatter } from '@/lib/types'
-import { extractSummary } from '@/lib/parser'
 
 interface DecisionWithContext {
   id: string
@@ -24,6 +24,7 @@ interface DecisionWithContext {
 /** Fetch rollups for all projects */
 function useAllProjectRollups(enabled: boolean) {
   const projects = useProjectStore((s) => s.projects)
+  const backend = useBackend()
   const [allRollups, setAllRollups] = useState<(RollupEpisode & { projectName: string })[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,9 +40,8 @@ function useAllProjectRollups(enabled: boolean) {
 
     Promise.all(
       projects.map(p =>
-        fetch(`/api/axon/projects/${encodeURIComponent(p.name)}/rollups`)
-          .then(r => r.ok ? r.json() : [])
-          .then((raw: Array<{ filename: string; content: string }>) =>
+        backend.getRollups(p.name)
+          .then((raw) =>
             raw.map(r => {
               const result = parseFrontmatter<RollupFrontmatter>(r.content)
               const ep: RollupEpisode & { projectName: string } = result.ok && result.data ? {

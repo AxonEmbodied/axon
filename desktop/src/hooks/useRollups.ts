@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { parseFrontmatter, extractSummary } from '@/lib/parser'
+import { useBackend } from '@/providers/DataProvider'
 import type { RollupEpisode, RollupFrontmatter } from '@/lib/types'
 
 export function useRollups(project: string | null) {
   const [rollups, setRollups] = useState<RollupEpisode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const backend = useBackend()
 
   useEffect(() => {
     if (!project) {
@@ -17,12 +19,8 @@ export function useRollups(project: string | null) {
 
     setLoading(true)
     setError(null)
-    fetch(`/api/axon/projects/${encodeURIComponent(project)}/rollups`)
-      .then(r => {
-        if (!r.ok) throw new Error(`Failed to load rollups (${r.status})`)
-        return r.json()
-      })
-      .then((raw: Array<{ filename: string; content: string }>) => {
+    backend.getRollups(project)
+      .then((raw) => {
         const parsed = raw.map(r => {
           const result = parseFrontmatter<RollupFrontmatter>(r.content)
           if (result.ok && result.data) {

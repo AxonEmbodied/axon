@@ -1,17 +1,14 @@
 import { useEffect } from 'react'
 import { useProjectStore } from '@/store/projectStore'
-import type { Project } from '@/lib/types'
+import { useBackend } from '@/providers/DataProvider'
 
 export function useProjects() {
   const { projects, setProjects, activeProject, setActiveProject, loading, error, setError } = useProjectStore()
+  const backend = useBackend()
 
   useEffect(() => {
-    fetch('/api/axon/projects')
-      .then(r => {
-        if (!r.ok) throw new Error(`Failed to load projects (${r.status})`)
-        return r.json()
-      })
-      .then((data: Project[]) => {
+    backend.getProjects()
+      .then((data) => {
         setProjects(data)
         // Auto-select first active project if none selected
         if (!activeProject && data.length > 0) {
