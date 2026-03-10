@@ -113,7 +113,9 @@ export function DecisionsView() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSearch('') }}
             placeholder="Search decisions..."
+            aria-label="Search decision traces"
             className="w-full bg-ax-elevated border border-ax-border rounded-lg pl-10 pr-4 py-2.5
               text-body text-ax-text-primary placeholder-ax-text-tertiary
               focus:outline-none focus:border-ax-brand focus:ring-1 focus:ring-ax-brand/20

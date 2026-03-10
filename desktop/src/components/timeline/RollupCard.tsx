@@ -48,13 +48,18 @@ export function RollupCard({ rollup, index, onClick }: { rollup: RollupEpisode; 
   return (
     <article
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
+      tabIndex={0}
+      role="button"
+      aria-label={`${frontmatter.headline || 'Rollup'} — ${formatDate(frontmatter.date)}`}
       className="animate-fade-in-up bg-ax-elevated rounded-xl border border-ax-border p-6
         cursor-pointer group
         shadow-[0_1px_3px_rgba(var(--ax-shadow-color),0.04)]
         transition-all duration-200
         hover:-translate-y-0.5
         hover:border-l-[3px] hover:border-l-ax-brand
-        hover:shadow-[0_8px_30px_rgba(var(--ax-shadow-color),0.1)]"
+        hover:shadow-[0_8px_30px_rgba(var(--ax-shadow-color),0.1)]
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-ax-brand focus-visible:ring-offset-2 focus-visible:ring-offset-ax-base"
       style={{ animationDelay: `${Math.min(index, 5) * 60}ms` }}
     >
       {/* Date + Energy */}

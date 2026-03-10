@@ -208,6 +208,49 @@ body {
 }
 
 /* ================================================
+   Accessibility
+   ================================================ */
+
+/* Focus-visible ring for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--ax-brand-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Hide focus ring for mouse clicks */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Skip to content link (screen readers + keyboard) */
+.skip-to-content {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--ax-brand-primary);
+  color: white;
+  border-radius: 0 0 8px 8px;
+  font-size: 14px;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+.skip-to-content:focus {
+  top: 0;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ================================================
    Animations
    ================================================ */
 @keyframes fadeInUp {
