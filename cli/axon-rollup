@@ -64,12 +64,12 @@ $(cat "$d")
 "
 done < <(find "$WORKSPACE/dendrites" -name "*.md" -print 2>/dev/null | sort -r | head -10)
 
-PROTOCOL_TEXT=""
-if [[ -f "$PROTOCOL" ]]; then
-    PROTOCOL_TEXT=$(cat "$PROTOCOL")
-else
-    echo "  WARNING: protocol.md not found at $PROTOCOL — rollup quality may be reduced"
+if [[ ! -f "$PROTOCOL" ]]; then
+    echo "FATAL: protocol.md not found at $PROTOCOL"
+    echo "[axon-rollup] end=$(date -u +"%Y-%m-%dT%H:%M:%SZ") project=$PROJECT status=failed error=no_protocol"
+    exit 1
 fi
+PROTOCOL_TEXT=$(cat "$PROTOCOL")
 
 DENDRITE_COUNT=$(find "$WORKSPACE/dendrites" -name "*.md" -print 2>/dev/null | wc -l | tr -d ' ')
 EPISODE_COUNT=$(find "$WORKSPACE/episodes" -name "*.md" -print 2>/dev/null | wc -l | tr -d ' ')
@@ -78,7 +78,9 @@ echo "  ✓ $DENDRITE_COUNT dendrite files"
 echo "  ✓ $EPISODE_COUNT previous episodes"
 
 if [[ -z "$DENDRITES" ]]; then
-    echo "  WARNING: No dendrite signals found. Rollup will have limited input."
+    echo "FATAL: No dendrite signals found. Cannot produce a meaningful rollup."
+    echo "[axon-rollup] end=$(date -u +"%Y-%m-%dT%H:%M:%SZ") project=$PROJECT status=failed error=no_dendrites"
+    exit 1
 fi
 echo ""
 
@@ -146,13 +148,23 @@ Be conversational but precise. Reference specific files, commits, and sessions.
 
 IMPORTANT: Output ONLY the rollup document. No preamble, no meta-commentary, no notes about your process. Start with the YAML frontmatter (---) and end with the last section. Do not mention files you wrote, tools you used, or sandbox limitations." | claude -p --output-format json 2>"$CLAUDE_STDERR")
 
-ROLLUP_TEXT=$(echo "$ROLLUP_RESULT" | jq -r '.result' 2>/dev/null)
+# Validate response is valid JSON with a .result field
+if ! echo "$ROLLUP_RESULT" | jq -e '.result' > /dev/null 2>&1; then
+    echo "FATAL: Claude returned invalid response (not JSON or missing .result)"
+    [[ -s "$CLAUDE_STDERR" ]] && echo "Claude stderr:" && cat "$CLAUDE_STDERR"
+    echo "Raw response (first 500 chars):"
+    echo "$ROLLUP_RESULT" | head -c 500
+    echo "[axon-rollup] end=$(date -u +"%Y-%m-%dT%H:%M:%SZ") project=$PROJECT status=failed error=invalid_json"
+    rm -f "$CLAUDE_STDERR"
+    exit 1
+fi
+
+ROLLUP_TEXT=$(echo "$ROLLUP_RESULT" | jq -r '.result')
 
 if [[ -z "$ROLLUP_TEXT" ]] || [[ "$ROLLUP_TEXT" == "null" ]]; then
-    echo "ERROR: Rollup generation failed."
+    echo "FATAL: Claude returned empty rollup."
     [[ -s "$CLAUDE_STDERR" ]] && echo "Claude stderr:" && cat "$CLAUDE_STDERR"
-    echo "$ROLLUP_RESULT" | jq '.' 2>/dev/null || echo "$ROLLUP_RESULT"
-    echo "[axon-rollup] end=$(date -u +"%Y-%m-%dT%H:%M:%SZ") project=$PROJECT status=failed error=claude_empty"
+    echo "[axon-rollup] end=$(date -u +"%Y-%m-%dT%H:%M:%SZ") project=$PROJECT status=failed error=empty_result"
     rm -f "$CLAUDE_STDERR"
     exit 1
 fi
@@ -200,10 +212,12 @@ IMPORTANT: Output ONLY the state.md content. No preamble, no meta-commentary, no
 rm -f "$CLAUDE_STDERR2"
 
 if [[ -n "$NEW_STATE" ]] && [[ "$NEW_STATE" != "null" ]]; then
+    cp "$WORKSPACE/state.md" "$WORKSPACE/state.md.backup"
     echo "$NEW_STATE" > "$WORKSPACE/state.md"
-    echo "  ✓ State updated"
+    echo "  ✓ State updated (backup at state.md.backup)"
 else
-    echo "  · State update failed (keeping previous state)"
+    echo "  WARNING: State update failed (keeping previous state)"
+    echo "[axon-rollup] state_update=failed project=$PROJECT"
 fi
 
 # Log it
@@ -211,10 +225,14 @@ echo "- [$(date -u +"%Y-%m-%dT%H:%M:%SZ")] @axon: Rollup committed: $TODAY → $
 
 # Step 6: Auto-commit to Axon git repo
 if [[ -d "$AXON_HOME/.git" ]]; then
-    git -C "$AXON_HOME" add "workspaces/$PROJECT/" 2>/dev/null
-    if ! git -C "$AXON_HOME" diff --cached --quiet 2>/dev/null; then
-        git -C "$AXON_HOME" commit -m "rollup: $PROJECT $TODAY" --quiet 2>/dev/null
-        echo "  ✓ Committed to Axon history"
+    if ! git -C "$AXON_HOME" add "workspaces/$PROJECT/" 2>&1; then
+        echo "  WARNING: Failed to stage rollup in Axon git repo"
+    elif ! git -C "$AXON_HOME" diff --cached --quiet 2>/dev/null; then
+        if git -C "$AXON_HOME" commit -m "rollup: $PROJECT $TODAY" --quiet 2>&1; then
+            echo "  ✓ Committed to Axon history"
+        else
+            echo "  WARNING: Failed to commit rollup to Axon git repo"
+        fi
     fi
 fi
 

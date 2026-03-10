@@ -87,7 +87,22 @@ case "$(uname)" in
 </plist>
 PLIST
 
+                # Validate plist syntax before loading
+                if ! plutil -lint "$PLIST_FILE" > /dev/null 2>&1; then
+                    echo "ERROR: Generated plist is invalid:"
+                    plutil -lint "$PLIST_FILE"
+                    rm -f "$PLIST_FILE"
+                    exit 1
+                fi
+
                 launchctl load "$PLIST_FILE" 2>/dev/null
+
+                # Verify it actually loaded
+                if ! launchctl list "$LABEL" &>/dev/null; then
+                    echo "WARNING: Plist written but launchctl failed to load it."
+                    echo "  Try: launchctl load $PLIST_FILE"
+                fi
+
                 echo "=== Cron Installed ==="
                 echo "  Project:  $PROJECT"
                 echo "  Schedule: daily at $CRON_TIME"
