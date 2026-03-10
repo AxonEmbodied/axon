@@ -139,8 +139,7 @@ if [[ -f "$PROTOCOL" ]]; then
 fi
 
 # --- Launch interactive session ---
-echo "Starting Axon morning session for $PROJECT..."
-echo ""
+SESSION_MARKER="$MORNING_DIR/${TODAY}.started"
 
 SYSTEM_CONTEXT="$PROTOCOL_TEXT
 
@@ -158,7 +157,17 @@ This is a morning briefing session. The developer just sat down. Greet them with
 
 This conversation will be saved to the project's mornings/ folder for future reference."
 
-# Launch interactive Claude with context
-exec claude \
-    --append-system-prompt "$SYSTEM_CONTEXT" \
-    2> >(tee -a "$MORNING_DIR/${TODAY}.log" >&2)
+# Resume existing session or start fresh
+if [[ -f "$SESSION_MARKER" ]]; then
+    echo "Resuming morning session for $PROJECT..."
+    echo ""
+    exec claude --continue \
+        2> >(tee -a "$MORNING_DIR/${TODAY}.log" >&2)
+else
+    echo "Starting Axon morning session for $PROJECT..."
+    echo ""
+    touch "$SESSION_MARKER"
+    exec claude \
+        --append-system-prompt "$SYSTEM_CONTEXT" \
+        2> >(tee -a "$MORNING_DIR/${TODAY}.log" >&2)
+fi
