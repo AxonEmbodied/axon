@@ -146,7 +146,7 @@ open_loops: <number of unfinished items>
 
 Be conversational but precise. Reference specific files, commits, and sessions.
 
-IMPORTANT: Output ONLY the rollup document. No preamble, no meta-commentary, no notes about your process. Start with the YAML frontmatter (---) and end with the last section. Do not mention files you wrote, tools you used, or sandbox limitations." | claude -p --output-format json 2>"$CLAUDE_STDERR")
+IMPORTANT: Output ONLY the rollup document. No preamble, no meta-commentary, no notes about your process. Start with the YAML frontmatter (---) and end with the last section. Do not mention files you wrote, tools you used, or sandbox limitations." | claude -p --output-format json --allowedTools "Read,Glob,Grep" 2>"$CLAUDE_STDERR")
 
 # Validate response is valid JSON with a .result field
 if ! echo "$ROLLUP_RESULT" | jq -e '.result' > /dev/null 2>&1; then
@@ -181,6 +181,10 @@ TMPFILE=$(mktemp "$WORKSPACE/episodes/.tmp.XXXXXX")
 echo "$ROLLUP_TEXT" > "$TMPFILE" && mv "$TMPFILE" "$EPISODE_FILE"
 echo "  ✓ Rollup → $(basename "$EPISODE_FILE")"
 
+# Update .last-collection NOW — rollup succeeded, safe to advance the window
+LAST_FILE="$WORKSPACE/dendrites/.last-collection"
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "$LAST_FILE"
+
 # Step 5: Update state.md via Claude
 echo ""
 echo "Step 5: Updating state..."
@@ -208,13 +212,14 @@ Regenerate state.md. MUST stay under 2000 tokens. If exceeding, prune decisions 
 
 Add YAML frontmatter: type: state, project: $PROJECT, last_rollup: $TODAY
 
-IMPORTANT: Output ONLY the state.md content. No preamble, no meta-commentary, no explanation of changes. Start with the YAML frontmatter (---) and end with the last section." | claude -p --output-format json 2>"$CLAUDE_STDERR2" | jq -r '.result' 2>/dev/null)
+IMPORTANT: Output ONLY the state.md content. No preamble, no meta-commentary, no explanation of changes. Start with the YAML frontmatter (---) and end with the last section." | claude -p --output-format json --allowedTools "Read,Glob,Grep" 2>"$CLAUDE_STDERR2" | jq -r '.result' 2>/dev/null)
 rm -f "$CLAUDE_STDERR2"
 
 if [[ -n "$NEW_STATE" ]] && [[ "$NEW_STATE" != "null" ]]; then
     cp "$WORKSPACE/state.md" "$WORKSPACE/state.md.backup"
-    echo "$NEW_STATE" > "$WORKSPACE/state.md"
-    echo "  ✓ State updated (backup at state.md.backup)"
+    TMPSTATE=$(mktemp "$WORKSPACE/.state.tmp.XXXXXX")
+    echo "$NEW_STATE" > "$TMPSTATE" && mv "$TMPSTATE" "$WORKSPACE/state.md"
+    echo "  ✓ State updated (atomic write, backup at state.md.backup)"
 else
     echo "  WARNING: State update failed (keeping previous state)"
     echo "[axon-rollup] state_update=failed project=$PROJECT"

@@ -124,8 +124,59 @@ else
     echo "  · file-tree: not a git repository"
 fi
 
-# Update last-collection timestamp
-date -u +"%Y-%m-%dT%H:%M:%SZ" > "$LAST_FILE"
+# --- STREAM DENDRITE (from axon log notes) ---
+if [[ -f "$WORKSPACE/stream.md" ]]; then
+    # Determine cutoff timestamp for filtering
+    if [[ -f "$LAST_FILE" ]]; then
+        CUTOFF=$(cat "$LAST_FILE")
+    else
+        CUTOFF=""
+    fi
+
+    # Pull @user entries since last collection
+    STREAM_ENTRIES=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        if echo "$line" | grep -q '@user:'; then
+            # If we have a cutoff, only include entries newer than it
+            if [[ -n "$CUTOFF" ]]; then
+                ENTRY_TS=$(echo "$line" | sed -n 's/.*\[\([^]]*\)\].*/\1/p')
+                if [[ -n "$ENTRY_TS" ]] && [[ "$ENTRY_TS" > "$CUTOFF" ]]; then
+                    STREAM_ENTRIES+="$line
+"
+                fi
+            else
+                STREAM_ENTRIES+="$line
+"
+            fi
+        fi
+    done < "$WORKSPACE/stream.md"
+
+    if [[ -n "$STREAM_ENTRIES" ]]; then
+        STREAM_COUNT=$(echo "$STREAM_ENTRIES" | grep -c '@user:' || true)
+        OUTFILE="$DENDRITE_DIR/${NOW}_stream.md"
+        cat > "$OUTFILE" << EOF
+---
+type: stream
+project: $PROJECT
+collected_at: $(echo "$NOW" | sed 's/T\([0-9]*\)-\([0-9]*\)-\([0-9]*\)Z/T\1:\2:\3Z/')
+entry_count: $STREAM_COUNT
+---
+
+# Stream Notes: $PROJECT
+
+$STREAM_ENTRIES
+EOF
+        echo "  ✓ stream: $STREAM_COUNT user notes"
+    else
+        echo "  · stream: no user notes"
+    fi
+else
+    echo "  · stream: no stream.md"
+fi
+
+# NOTE: .last-collection is NOT updated here.
+# axon-rollup updates it after successful rollup to avoid losing signals on failure.
 
 echo ""
 echo "Done. Dendrites in $DENDRITE_DIR/"
