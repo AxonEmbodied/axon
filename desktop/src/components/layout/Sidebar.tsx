@@ -9,7 +9,7 @@ const navItems: { id: ViewId; label: string; icon: typeof Clock }[] = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
-export function Sidebar() {
+export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
   const { projects, activeProject, setActiveProject } = useProjects()
   const { activeView, setView, theme, toggleTheme } = useUIStore()
   const today = new Date().toISOString().split('T')[0]
@@ -91,9 +91,29 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/* Project dots — macOS Spaces-style indicator */}
+      {projects.filter(p => p.status === 'active').length > 1 && (
+        <div className="flex justify-center gap-1.5 px-3 pb-3" aria-label="Project position">
+          {projects.filter(p => p.status === 'active').map((p) => (
+            <button
+              key={p.name}
+              onClick={() => setActiveProject(p.name)}
+              aria-label={`Switch to ${p.name}`}
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-200
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
+                ${activeProject === p.name
+                  ? 'bg-[var(--ax-text-on-dark)] scale-125'
+                  : 'bg-[var(--ax-text-on-dark-muted)] hover:bg-[var(--ax-text-on-dark)] opacity-40 hover:opacity-70'
+                }`}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Footer: Search + Theme Toggle */}
       <div className="px-3 pb-5 space-y-1">
         <button
+          onClick={onOpenPalette}
           aria-label="Search (Cmd+K)"
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
             text-[var(--ax-text-on-dark-muted)] hover:bg-white/5 transition-colors text-small
