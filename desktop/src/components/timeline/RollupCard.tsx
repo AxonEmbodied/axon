@@ -45,6 +45,7 @@ function Metrics({ frontmatter }: { frontmatter: RollupEpisode['frontmatter'] })
 
 export function RollupCard({ rollup, index, onClick }: { rollup: RollupEpisode; index: number; onClick?: () => void }) {
   const { frontmatter, summary } = rollup
+  const isGenesis = frontmatter.type === 'genesis' || rollup.filename?.startsWith('0000')
 
   return (
     <article
@@ -53,27 +54,38 @@ export function RollupCard({ rollup, index, onClick }: { rollup: RollupEpisode; 
       tabIndex={0}
       role="button"
       aria-label={`${frontmatter.headline || 'Rollup'} — ${formatDate(frontmatter.date)}`}
-      className="animate-fade-in-up bg-ax-elevated rounded-xl border border-ax-border p-6
+      className={`animate-fade-in-up rounded-xl p-6
         cursor-pointer group
-        shadow-[0_1px_3px_rgba(var(--ax-shadow-color),0.04)]
         transition-all duration-200
         hover:-translate-y-0.5
-        hover:border-l-[3px] hover:border-l-ax-brand
         hover:shadow-[0_8px_30px_rgba(var(--ax-shadow-color),0.1)]
-        focus:outline-none focus-visible:ring-2 focus-visible:ring-ax-brand focus-visible:ring-offset-2 focus-visible:ring-offset-ax-base"
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-ax-brand focus-visible:ring-offset-2 focus-visible:ring-offset-ax-base
+        ${isGenesis
+          ? 'bg-ax-brand-subtle border-2 border-ax-brand/30 shadow-[0_2px_8px_rgba(var(--ax-shadow-color),0.08)] hover:border-ax-brand/50'
+          : 'bg-ax-elevated border border-ax-border shadow-[0_1px_3px_rgba(var(--ax-shadow-color),0.04)] hover:border-l-[3px] hover:border-l-ax-brand'
+        }`}
       style={{ animationDelay: `${Math.min(index, 5) * 60}ms` }}
     >
       {/* Date + Energy */}
       <div className="flex items-center justify-between mb-3">
-        <time className="font-mono text-small text-ax-text-tertiary tracking-wide">
-          {formatDate(frontmatter.date)}
-        </time>
+        <div className="flex items-center gap-2">
+          {isGenesis && (
+            <span className="font-mono text-micro uppercase tracking-widest text-ax-brand font-semibold">Origin</span>
+          )}
+          <time className="font-mono text-small text-ax-text-tertiary tracking-wide">
+            {formatDate(frontmatter.date)}
+          </time>
+        </div>
         <EnergyDots energy={frontmatter.energy} />
       </div>
 
       {/* Headline */}
-      <h2 className="font-serif text-h3 text-ax-text-primary mb-3 group-hover:text-ax-brand transition-colors duration-200">
-        {frontmatter.headline || (frontmatter.type === 'genesis' ? 'Genesis Rollup' : 'Daily Rollup')}
+      <h2 className={`font-serif text-h3 mb-3 transition-colors duration-200
+        ${isGenesis
+          ? 'text-ax-brand group-hover:text-ax-brand-hover'
+          : 'text-ax-text-primary group-hover:text-ax-brand'
+        }`}>
+        {frontmatter.headline || (isGenesis ? 'Genesis Rollup' : 'Daily Rollup')}
       </h2>
 
       {/* Tags */}

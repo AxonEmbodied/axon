@@ -6,6 +6,7 @@ import { StateView } from '@/views/StateView'
 import { SettingsView } from '@/views/SettingsView'
 import { DecisionsView } from '@/views/DecisionsView'
 import { MorningView } from '@/views/MorningView'
+import { OnboardingView } from '@/views/OnboardingView'
 import { useUIStore } from '@/store/uiStore'
 
 function ViewRouter() {
@@ -24,6 +25,8 @@ function ViewRouter() {
       return <SettingsView />
     case 'morning':
       return <MorningView />
+    case 'onboarding':
+      return <OnboardingView />
     default:
       return <TimelineView />
   }

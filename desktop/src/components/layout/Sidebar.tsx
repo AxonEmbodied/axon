@@ -1,6 +1,6 @@
 import { useProjects } from '@/hooks/useProjects'
 import { useUIStore, type ViewId } from '@/store/uiStore'
-import { Layers, Clock, Brain, Settings, Search, Sun, Moon, Coffee } from 'lucide-react'
+import { Layers, Clock, Brain, Settings, Search, Sun, Moon, Coffee, Plus } from 'lucide-react'
 
 const navItems: { id: ViewId; label: string; icon: typeof Clock }[] = [
   { id: 'timeline', label: 'Timeline', icon: Clock },
@@ -34,6 +34,17 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
         <div className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)] px-2 mb-2" aria-hidden="true">
           Projects
         </div>
+        <button
+          onClick={() => setView('onboarding')}
+          aria-label="Add new project"
+          className="w-full text-left px-3 py-2 rounded-lg mb-2 flex items-center gap-3 transition-all duration-150
+            text-[var(--ax-text-on-dark-muted)] hover:bg-white/5 hover:text-[var(--ax-text-on-dark)]
+            border border-dashed border-white/10 hover:border-white/20
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]"
+        >
+          <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
+          <span className="text-small">New Project</span>
+        </button>
         {projects.map((p) => {
           const isToday = p.lastRollup === today
           return (

@@ -19,7 +19,7 @@ export function renderInlineFormatting(text: string): ReactNode {
     // Links [text](url)
     const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
     if (linkMatch) {
-      return <span key={i} className="text-ax-brand underline underline-offset-2">{linkMatch[1]}</span>
+      return <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-ax-brand underline underline-offset-2 hover:text-ax-brand-hover transition-colors">{linkMatch[1]}</a>
     }
     // Emoji risk flags
     if (part.includes('⚠️')) {

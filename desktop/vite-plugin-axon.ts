@@ -1,8 +1,9 @@
 import type { Plugin } from 'vite'
 import { readdir, readFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
-import { spawn } from 'child_process'
+import { spawn, execSync } from 'child_process'
 
 export function axonDevApi(): Plugin {
   const AXON_HOME = resolve(join(homedir(), '.axon'))
@@ -199,6 +200,131 @@ export function axonDevApi(): Plugin {
               req.on('close', () => {
                 if (!child.killed) child.kill()
                 resolve()
+              })
+            })
+            return
+          }
+
+          // GET /api/axon/discover-repos
+          if (req.url === '/api/axon/discover-repos') {
+            const home = homedir()
+            const scanDirs = ['Github', 'Projects', 'Developer', 'Code', 'repos', 'src', 'work']
+              .map(d => join(home, d))
+              .filter(d => existsSync(d))
+
+            const repos: { name: string; path: string; remote: string; commitCount: number; lastActivity: string }[] = []
+
+            for (const dir of scanDirs) {
+              let entries: import('fs').Dirent[]
+              try {
+                entries = await readdir(dir, { withFileTypes: true })
+              } catch {
+                continue
+              }
+              for (const entry of entries) {
+                if (!entry.isDirectory()) continue
+                const repoPath = join(dir, entry.name)
+                if (!existsSync(join(repoPath, '.git'))) continue
+
+                let remote = ''
+                try { remote = execSync(`git -C "${repoPath}" remote get-url origin 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+
+                let commitCount = 0
+                try { commitCount = parseInt(execSync(`git -C "${repoPath}" rev-list --count HEAD 2>/dev/null`, { encoding: 'utf-8' }).trim(), 10) || 0 } catch {}
+
+                let lastActivity = ''
+                try { lastActivity = execSync(`git -C "${repoPath}" log -1 --format=%ai 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+
+                repos.push({ name: entry.name, path: repoPath, remote, commitCount, lastActivity })
+              }
+            }
+
+            res.end(JSON.stringify(repos))
+            return
+          }
+
+          // GET /api/axon/context-status
+          if (req.url === '/api/axon/context-status') {
+            const axonGit = join(AXON_HOME, '.git')
+            const initialized = existsSync(axonGit)
+
+            let remote = ''
+            let commitCount = 0
+            let lastCommit = ''
+
+            if (initialized) {
+              try { remote = execSync(`git -C "${AXON_HOME}" remote get-url origin 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+              try { commitCount = parseInt(execSync(`git -C "${AXON_HOME}" rev-list --count HEAD 2>/dev/null`, { encoding: 'utf-8' }).trim(), 10) || 0 } catch {}
+              try { lastCommit = execSync(`git -C "${AXON_HOME}" log -1 --format=%ai 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+            }
+
+            res.end(JSON.stringify({ initialized, remote, commitCount, lastCommit }))
+            return
+          }
+
+          // POST /api/axon/init — SSE streaming project init
+          if (req.url === '/api/axon/init' && req.method === 'POST') {
+            const body = await new Promise<string>((resolve) => {
+              let data = ''
+              req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+              req.on('end', () => resolve(data))
+            })
+
+            const { projectName, projectPath } = JSON.parse(body) as {
+              projectName: string
+              projectPath: string
+            }
+
+            res.setHeader('Content-Type', 'text/event-stream')
+            res.setHeader('Cache-Control', 'no-cache')
+            res.setHeader('Connection', 'keep-alive')
+
+            const cleanEnv = { ...process.env }
+            delete cleanEnv.CLAUDECODE
+            delete cleanEnv.CLAUDE_CODE_SESSION
+
+            const initScript = resolve(join(process.cwd(), '..', 'cli', 'axon-init'))
+
+            const child = spawn(initScript, [], {
+              stdio: ['ignore', 'pipe', 'pipe'],
+              env: { ...cleanEnv, PROJECT: projectName, PROJECT_PATH: projectPath, AXON_HOME },
+              cwd: projectPath,
+            })
+
+            child.stdout.on('data', (data: Buffer) => {
+              const text = data.toString()
+              res.write(`data: ${JSON.stringify({ type: 'progress', text })}\n\n`)
+            })
+
+            child.stderr.on('data', (data: Buffer) => {
+              const text = data.toString()
+              res.write(`data: ${JSON.stringify({ type: 'log', text })}\n\n`)
+            })
+
+            await new Promise<void>((resolveInit) => {
+              child.on('close', async (code) => {
+                // Read the genesis file and send its content before 'done'
+                if (code === 0) {
+                  try {
+                    const genesisPath = join(AXON_HOME, 'workspaces', projectName, 'episodes', '0000_genesis.md')
+                    const genesisContent = await readFile(genesisPath, 'utf-8')
+                    res.write(`data: ${JSON.stringify({ type: 'content', text: genesisContent })}\n\n`)
+                  } catch {}
+                }
+                res.write(`data: ${JSON.stringify({ type: 'done', code })}\n\n`)
+                res.end()
+                resolveInit()
+              })
+
+              child.on('error', (err) => {
+                res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`)
+                res.end()
+                resolveInit()
+              })
+
+              req.on('close', () => {
+                if (!child.killed) child.kill()
+                resolveInit()
               })
             })
             return
