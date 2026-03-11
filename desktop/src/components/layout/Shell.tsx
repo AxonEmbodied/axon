@@ -6,6 +6,7 @@ import { useThemeSync } from '@/hooks/useThemeSync'
 import { useDataRefresh } from '@/hooks/useDataRefresh'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useProjectStore } from '@/store/projectStore'
+import { DebugMenu } from '@/components/shared/DebugMenu'
 
 export function Shell({ children }: { children: ReactNode }) {
   useThemeSync()
@@ -28,6 +29,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <Sidebar onOpenPalette={togglePalette} />
       <main className="flex-1 overflow-y-auto bg-ax-base relative" role="main" aria-label="Main content" id="main-content">
         <NeuralBackground />
+        <DebugMenu />
         <div className={`relative max-w-3xl mx-auto px-8 py-10 ${swipeClass}`} key={useProjectStore.getState().activeProject || 'none'}>
           {children}
         </div>

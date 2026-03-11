@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useUIStore } from '@/store/uiStore'
 import { useProjectStore } from '@/store/projectStore'
 import { useBackend } from '@/providers/DataProvider'
+import { useDebugStore } from '@/store/debugStore'
 import { Folder, GitBranch, Zap, ArrowRight, ArrowLeft, Check, Search, Globe, HardDrive } from 'lucide-react'
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -181,6 +182,18 @@ function RepoSelector({ onSelect }: { onSelect: (repo: DiscoveredRepo) => void }
   const [customPath, setCustomPath] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [simulateEmpty, setSimulateEmpty] = useState(false)
+  const { register, unregister } = useDebugStore()
+
+  // Register debug action for this view
+  useEffect(() => {
+    register({
+      id: 'onboarding:empty-repos',
+      label: 'Simulate empty repos',
+      active: simulateEmpty,
+      toggle: () => setSimulateEmpty(v => !v),
+    })
+    return () => unregister('onboarding:empty-repos')
+  }, [simulateEmpty, register, unregister])
 
   useEffect(() => {
     fetch('/api/axon/discover-repos')
@@ -354,15 +367,6 @@ function RepoSelector({ onSelect }: { onSelect: (repo: DiscoveredRepo) => void }
         )}
       </div>
 
-      {/* Dev: test empty state */}
-      {import.meta.env.DEV && repos.length > 0 && (
-        <button
-          onClick={() => setSimulateEmpty(!simulateEmpty)}
-          className="font-mono text-micro text-ax-text-ghost hover:text-ax-text-tertiary transition-colors"
-        >
-          {simulateEmpty ? '✕ Exit empty state test' : '⚙ Test empty state'}
-        </button>
-      )}
     </div>
   )
 }
