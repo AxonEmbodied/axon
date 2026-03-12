@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import type { AgentEvent, AgentStatus } from './types'
+import type { AgentEvent, AgentStatus, PermissionMode } from './types'
+import { PERMISSION_MODES } from './types'
 
 export function useAgentSession() {
   const [events, setEvents] = useState<AgentEvent[]>([])
@@ -11,6 +12,7 @@ export function useAgentSession() {
   const abortRef = useRef<AbortController | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef(0)
+  const priorContextRef = useRef<string | null>(null)
 
   // Elapsed timer
   useEffect(() => {
@@ -21,6 +23,7 @@ export function useAgentSession() {
       }, 1000)
     } else if (timerRef.current) {
       clearInterval(timerRef.current)
+      timerRef.current = null
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [status])
@@ -33,8 +36,8 @@ export function useAgentSession() {
   // Cleanup on unmount
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
-  const send = useCallback(async (prompt: string, project: string, allowedTools?: string[]) => {
-    // Inject user message into timeline
+  const send = useCallback(async (prompt: string, project: string, permissionMode: PermissionMode = 'auto') => {
+    // Inject user message into timeline (show original prompt, not context-injected)
     setEvents(prev => [...prev, {
       kind: 'user_message',
       id: `user-${Date.now()}`,
@@ -45,6 +48,17 @@ export function useAgentSession() {
     setElapsed(0)
     setStatus('running')
 
+    // If editing from a prior point, inject conversation context into the prompt
+    let fullPrompt = prompt
+    if (priorContextRef.current) {
+      fullPrompt = `<context>\nPrevious conversation in this session:\n${priorContextRef.current}\n</context>\n\n${prompt}`
+      priorContextRef.current = null
+    }
+
+    // Resolve allowed tools from permission mode
+    const modeConfig = PERMISSION_MODES.find(m => m.key === permissionMode)
+    const allowedTools = modeConfig?.tools || PERMISSION_MODES[0].tools
+
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -53,9 +67,9 @@ export function useAgentSession() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt,
+          prompt: fullPrompt,
           project,
-          allowedTools: allowedTools || ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
+          allowedTools,
           continueSession: sessionId != null,
         }),
         signal: controller.signal,
@@ -109,5 +123,52 @@ export function useAgentSession() {
     setSessionId(null)
   }, [])
 
-  return { events, status, elapsed, error, sessionId, send, stop, reset }
+  // Edit and resend from a specific user message
+  const editFromIndex = useCallback((eventIndex: number): string | null => {
+    if (status === 'running') return null
+
+    const targetEvent = events[eventIndex]
+    if (!targetEvent || targetEvent.kind !== 'user_message') return null
+
+    const messageText = targetEvent.text || ''
+
+    // Build conversation summary from events before the edit point
+    // so Claude gets context of what was discussed
+    const contextParts: string[] = []
+    for (const evt of events.slice(0, eventIndex)) {
+      if (evt.kind === 'session_divider') continue
+      if (evt.kind === 'user_message') {
+        contextParts.push(`User: ${evt.text}`)
+      } else if (evt.kind === 'text') {
+        const text = evt.text || ''
+        contextParts.push(`Assistant: ${text.length > 500 ? text.slice(0, 500) + '…' : text}`)
+      } else if (evt.kind === 'tool_use') {
+        const summary = evt.toolName === 'Bash'
+          ? `${evt.toolName}(${(evt.toolInput?.command as string)?.slice(0, 60) || ''})`
+          : evt.toolName === 'Read' || evt.toolName === 'Edit' || evt.toolName === 'Write'
+            ? `${evt.toolName}(${evt.toolInput?.file_path || ''})`
+            : `${evt.toolName}()`
+        contextParts.push(`Assistant used tool: ${summary}`)
+      }
+    }
+    priorContextRef.current = contextParts.length > 0 ? contextParts.join('\n') : null
+
+    // Truncate to before the message, inject session divider
+    setEvents(prev => [
+      ...prev.slice(0, eventIndex),
+      {
+        kind: 'session_divider' as const,
+        id: `divider-${Date.now()}`,
+        timestamp: Date.now(),
+      },
+    ])
+
+    setSessionId(null)
+    setStatus('idle')
+    setError(null)
+
+    return messageText
+  }, [events, status])
+
+  return { events, status, elapsed, error, sessionId, send, stop, reset, editFromIndex }
 }

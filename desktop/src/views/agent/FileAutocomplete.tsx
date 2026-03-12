@@ -13,6 +13,18 @@ interface FileAutocompleteProps {
 
 export function FileAutocomplete({ results, loading, query, selected, onSelect, onHover, onClose }: FileAutocompleteProps) {
   const listRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Close on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [onClose])
 
   // Scroll selected item into view
   useEffect(() => {
@@ -26,7 +38,7 @@ export function FileAutocomplete({ results, loading, query, selected, onSelect, 
   const visible = results.slice(0, 50)
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 animate-slide-up">
+    <div ref={containerRef} className="absolute bottom-full left-0 right-0 mb-1 z-50 animate-slide-up">
       <div className="mx-3 bg-ax-elevated border border-ax-border rounded-lg shadow-lg
         overflow-hidden max-h-[280px] flex flex-col">
         {/* Header */}

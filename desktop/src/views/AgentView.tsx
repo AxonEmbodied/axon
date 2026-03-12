@@ -1,32 +1,18 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Terminal, Send, Square, Clock, RotateCcw, Shield, ChevronDown } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Terminal, Send, Square, Clock, RotateCcw, Shield } from 'lucide-react'
 import { useProjectStore } from '@/store/projectStore'
 import { useAgentSession } from './agent/useAgentSession'
 import { AgentTimeline } from './agent/AgentTimeline'
 import { FileTree } from './agent/FileTree'
 import { FileAutocomplete } from './agent/FileAutocomplete'
 import { useFileSearch } from './agent/useFileSearch'
-import type { AgentStatus } from './agent/types'
+import type { AgentStatus, PermissionMode } from './agent/types'
+import { PERMISSION_MODES } from './agent/types'
 
 const STATUS_DOT: Record<AgentStatus, string> = {
   idle: 'bg-ax-text-tertiary', running: 'bg-ax-brand animate-pulse-dot',
   complete: 'bg-ax-success', error: 'bg-ax-error',
 }
-
-/* ── Available tools for permission control ────────────────────── */
-
-const ALL_TOOLS = [
-  { name: 'Read', label: 'Read', safe: true },
-  { name: 'Glob', label: 'Glob', safe: true },
-  { name: 'Grep', label: 'Grep', safe: true },
-  { name: 'Edit', label: 'Edit', safe: false },
-  { name: 'Write', label: 'Write', safe: false },
-  { name: 'Bash', label: 'Bash', safe: false },
-  { name: 'WebSearch', label: 'Search', safe: true },
-  { name: 'WebFetch', label: 'Fetch', safe: true },
-] as const
-
-const DEFAULT_TOOLS = ALL_TOOLS.map(t => t.name)
 
 /* ── Extract @query from cursor position ────────────────────────── */
 
@@ -46,15 +32,52 @@ function extractAtQuery(text: string, cursorPos: number): string | null {
 export function AgentView() {
   const activeProject = useProjectStore((s) => s.activeProject)
   const [prompt, setPrompt] = useState('')
-  const [allowedTools, setAllowedTools] = useState<string[]>([...DEFAULT_TOOLS])
-  const [showPerms, setShowPerms] = useState(false)
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('auto')
   const [acQuery, setAcQuery] = useState<string | null>(null)
   const [acSelected, setAcSelected] = useState(0)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const { events, status, elapsed, error, sessionId, send, stop, reset } = useAgentSession()
+  const { events, status, elapsed, error, sessionId, send, stop, reset, editFromIndex } = useAgentSession()
 
   // File search for autocomplete
   const { results: acResults, loading: acLoading } = useFileSearch(acQuery || '', activeProject)
+
+  // Accumulate cost + tokens across all result events
+  const { totalCost, totalTokens } = useMemo(() => {
+    let cost = 0
+    let tokens = 0
+    for (const evt of events) {
+      if (evt.kind === 'result') {
+        if (evt.cost != null) cost += evt.cost
+        if (evt.usage) tokens += evt.usage.input_tokens + evt.usage.output_tokens
+      }
+    }
+    return { totalCost: cost, totalTokens: tokens }
+  }, [events])
+
+  // Current permission mode info
+  const currentMode = PERMISSION_MODES.find(m => m.key === permissionMode) || PERMISSION_MODES[0]
+
+  // Cycle permission mode
+  const cyclePermissionMode = useCallback(() => {
+    setPermissionMode(prev => {
+      const idx = PERMISSION_MODES.findIndex(m => m.key === prev)
+      return PERMISSION_MODES[(idx + 1) % PERMISSION_MODES.length].key
+    })
+  }, [])
+
+  // Global Shift+Tab listener for permission mode cycling
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault()
+        if (status !== 'running' && status !== 'awaiting_permission') {
+          cyclePermissionMode()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [status, cyclePermissionMode])
 
   // Focus input when status returns to idle/complete
   useEffect(() => {
@@ -107,14 +130,36 @@ export function AgentView() {
     })
   }, [prompt])
 
+  const isActive = status === 'running'
+
   const handleSubmit = () => {
-    if (!prompt.trim() || !activeProject || status === 'running') return
-    send(prompt.trim(), activeProject, allowedTools)
+    if (!prompt.trim() || !activeProject || isActive) return
+    send(prompt.trim(), activeProject, permissionMode)
     setPrompt('')
     setAcQuery(null)
   }
 
+  // Edit and resend from a past user message
+  const handleEditMessage = useCallback((eventIndex: number) => {
+    const text = editFromIndex(eventIndex)
+    if (text != null) {
+      setPrompt(text)
+      requestAnimationFrame(() => {
+        const ta = inputRef.current
+        if (ta) {
+          ta.focus()
+          ta.setSelectionRange(text.length, text.length)
+          ta.style.height = 'auto'
+          ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'
+        }
+      })
+    }
+  }, [editFromIndex])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Shift+Tab handled globally (window listener above)
+    if (e.key === 'Tab' && e.shiftKey) return
+
     // Autocomplete keyboard handling
     if (acQuery !== null && acResults.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -152,12 +197,6 @@ export function AgentView() {
     }
   }
 
-  const toggleTool = (name: string) => {
-    setAllowedTools(prev =>
-      prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]
-    )
-  }
-
   const showAutocomplete = acQuery !== null && acQuery.length >= 0 && acResults.length > 0
 
   return (
@@ -180,7 +219,7 @@ export function AgentView() {
             </span>
           )}
           <div className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
-          {status === 'running' && (
+          {(status === 'running' || status === 'awaiting_permission') && (
             <span className="font-mono text-[10px] text-ax-text-tertiary flex items-center gap-1">
               <Clock size={9} /> {elapsed}s
             </span>
@@ -190,18 +229,35 @@ export function AgentView() {
               session
             </span>
           )}
+          {totalCost > 0 && (
+            <span className="font-mono text-[10px] text-ax-text-tertiary">
+              ${totalCost.toFixed(4)}
+            </span>
+          )}
+          {totalTokens > 0 && (
+            <span className="font-mono text-[10px] text-ax-text-ghost">
+              {(totalTokens / 1000).toFixed(1)}k
+            </span>
+          )}
           <div className="flex-1" />
-          {/* Tool permissions toggle */}
+          {/* Permission mode selector */}
           <button
-            onClick={() => setShowPerms(p => !p)}
+            onClick={cyclePermissionMode}
+            disabled={isActive}
+            title={`${currentMode.desc} · Shift+Tab to cycle`}
             className={`flex items-center gap-1 font-mono text-[10px] transition-colors
-              ${showPerms ? 'text-ax-brand' : 'text-ax-text-ghost hover:text-ax-text-tertiary'}`}
+              disabled:opacity-50
+              ${permissionMode === 'auto' ? 'text-ax-success' :
+                permissionMode === 'plan' ? 'text-ax-info' :
+                permissionMode === 'ask' ? 'text-ax-warning' :
+                'text-ax-accent'
+              } hover:brightness-125`}
           >
             <Shield size={10} />
-            <span>{allowedTools.length}/{ALL_TOOLS.length}</span>
-            <ChevronDown size={8} className={`transition-transform ${showPerms ? 'rotate-180' : ''}`} />
+            <span>{currentMode.label}</span>
+            <span className="text-ax-text-ghost text-[8px]">⇧⇥</span>
           </button>
-          {events.length > 0 && status !== 'running' && (
+          {events.length > 0 && !isActive && (
             <button
               onClick={reset}
               className="flex items-center gap-1 font-mono text-[10px] text-ax-text-tertiary
@@ -212,33 +268,9 @@ export function AgentView() {
           )}
         </div>
 
-        {/* Tool permissions bar */}
-        {showPerms && (
-          <div className="shrink-0 flex items-center gap-1 px-4 py-1 border-b border-ax-border-subtle bg-ax-sunken/30">
-            <span className="text-[9px] text-ax-text-ghost font-mono mr-1">Tools:</span>
-            {ALL_TOOLS.map(tool => (
-              <button
-                key={tool.name}
-                onClick={() => toggleTool(tool.name)}
-                disabled={status === 'running'}
-                className={`px-1.5 py-0.5 rounded text-[9px] font-mono transition-colors
-                  disabled:opacity-50
-                  ${allowedTools.includes(tool.name)
-                    ? tool.safe
-                      ? 'bg-ax-success/10 text-ax-success border border-ax-success/20'
-                      : 'bg-ax-warning/10 text-ax-warning border border-ax-warning/20'
-                    : 'bg-ax-sunken text-ax-text-ghost border border-ax-border-subtle'
-                  }`}
-              >
-                {tool.label}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Timeline — takes all available space */}
         {events.length > 0 ? (
-          <AgentTimeline events={events} status={status} />
+          <AgentTimeline events={events} status={status} onEditMessage={handleEditMessage} />
         ) : (
           <div className="flex-1 flex items-center justify-center min-h-0">
             <div className="text-center">
@@ -289,11 +321,11 @@ export function AgentView() {
               }}
               placeholder={
                 !activeProject ? 'Select a project first...'
-                : status === 'running' ? 'Waiting for agent...'
+                : isActive ? 'Waiting for agent...'
                 : sessionId ? 'Follow-up message...'
                 : 'What should the agent do? Use @ to reference files'
               }
-              disabled={!activeProject || status === 'running'}
+              disabled={!activeProject || isActive}
               rows={1}
               className="flex-1 bg-ax-elevated border border-ax-border rounded-lg px-3 py-2
                 text-small text-ax-text-primary placeholder:text-ax-text-tertiary resize-none
@@ -306,7 +338,7 @@ export function AgentView() {
                 t.style.height = Math.min(t.scrollHeight, 120) + 'px'
               }}
             />
-            {status === 'running' ? (
+            {isActive ? (
               <button
                 onClick={stop}
                 className="shrink-0 p-2 bg-ax-error/10 text-ax-error rounded-lg
@@ -330,7 +362,7 @@ export function AgentView() {
               </button>
             )}
           </div>
-          <span className="text-[9px] text-ax-text-tertiary px-1 mt-0.5 block">Enter to send · Shift+Enter for newline · @ to reference files</span>
+          <span className="text-[9px] text-ax-text-tertiary px-1 mt-0.5 block">Enter to send · Shift+Enter for newline · @ to reference files · Shift+Tab to change mode</span>
         </div>
       </div>
     </div>

@@ -1,8 +1,12 @@
 import { useEffect, useRef, useMemo } from 'react'
 import type { AgentEvent, AgentStatus } from './types'
-import { UserMessageCard, TextCard, ThinkingCard, ToolUseCard, ResultCard, ErrorCard, TypingIndicator } from './AgentCards'
+import { UserMessageCard, TextCard, ThinkingCard, ToolUseCard, ResultCard, ErrorCard, TypingIndicator, SessionDivider } from './AgentCards'
 
-export function AgentTimeline({ events, status }: { events: AgentEvent[]; status: AgentStatus }) {
+export function AgentTimeline({ events, status, onEditMessage }: {
+  events: AgentEvent[]
+  status: AgentStatus
+  onEditMessage?: (eventIndex: number) => void
+}) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new events
@@ -24,7 +28,10 @@ export function AgentTimeline({ events, status }: { events: AgentEvent[]; status
   }, [events])
 
   // Skip tool_result events — they render inside ToolUseCard
-  const visible = events.filter(e => e.kind !== 'tool_result')
+  const visible = useMemo(
+    () => events.filter(e => e.kind !== 'tool_result'),
+    [events]
+  )
 
   // Show typing indicator when running and the last visible event isn't a pending tool_use
   const lastVisible = visible[visible.length - 1]
@@ -43,7 +50,18 @@ export function AgentTimeline({ events, status }: { events: AgentEvent[]; status
         {visible.map(evt => {
           switch (evt.kind) {
             case 'user_message':
-              return <UserMessageCard key={evt.id} event={evt} />
+              return (
+                <UserMessageCard
+                  key={evt.id}
+                  event={evt}
+                  onEdit={onEditMessage && status !== 'running'
+                    ? () => {
+                        const idx = events.findIndex(e => e.id === evt.id)
+                        if (idx >= 0) onEditMessage(idx)
+                      }
+                    : undefined}
+                />
+              )
             case 'text':
               return <TextCard key={evt.id} event={evt} />
             case 'thinking':
@@ -54,6 +72,8 @@ export function AgentTimeline({ events, status }: { events: AgentEvent[]; status
               return <ResultCard key={evt.id} event={evt} />
             case 'error':
               return <ErrorCard key={evt.id} event={evt} />
+            case 'session_divider':
+              return <SessionDivider key={evt.id} />
             default:
               return null
           }

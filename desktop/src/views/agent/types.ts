@@ -8,6 +8,7 @@ export type AgentEventKind =
   | 'thinking'
   | 'result'
   | 'error'
+  | 'session_divider'
 
 export interface AgentEvent {
   kind: AgentEventKind
@@ -35,3 +36,18 @@ export type KnownTool = 'Edit' | 'Write' | 'Read' | 'Bash' | 'Glob' | 'Grep' | '
 export function isKnownTool(name: string): name is KnownTool {
   return ['Edit', 'Write', 'Read', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'].includes(name)
 }
+
+/* ── Permission modes ────────────────────────────────────────── */
+
+export type PermissionMode = 'auto' | 'edits' | 'plan'
+
+export const PERMISSION_MODES: {
+  key: PermissionMode
+  label: string
+  desc: string
+  tools: string[]
+}[] = [
+  { key: 'auto',  label: 'Auto',  desc: 'All tools allowed',          tools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'WebSearch', 'WebFetch'] },
+  { key: 'edits', label: 'Edits', desc: 'File ops allowed, no Bash',  tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'WebSearch', 'WebFetch'] },
+  { key: 'plan',  label: 'Plan',  desc: 'Read-only, no modifications', tools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'] },
+]

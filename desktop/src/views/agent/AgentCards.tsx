@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import {
   Terminal, Eye, PenLine, FilePlus, Search,
   AlertTriangle, ChevronDown, ChevronRight,
-  Check, Brain, Loader,
+  Check, Brain, Loader, Globe, RotateCcw,
 } from 'lucide-react'
 import type { AgentEvent, KnownTool } from './types'
 import { isKnownTool } from './types'
@@ -13,7 +13,7 @@ import { isKnownTool } from './types'
 
 const TOOL_ICON: Record<KnownTool, typeof Terminal> = {
   Edit: PenLine, Write: FilePlus, Read: Eye, Bash: Terminal,
-  Glob: Search, Grep: Search, WebSearch: Search, WebFetch: Search,
+  Glob: Search, Grep: Search, WebSearch: Search, WebFetch: Globe,
 }
 const TOOL_COLOR: Record<KnownTool, string> = {
   Edit: 'text-ax-warning', Write: 'text-ax-accent', Read: 'text-ax-info',
@@ -23,11 +23,23 @@ const TOOL_COLOR: Record<KnownTool, string> = {
 
 /* ── User message ──────────────────────────────────────────────── */
 
-export function UserMessageCard({ event }: { event: AgentEvent }) {
+export function UserMessageCard({ event, onEdit }: { event: AgentEvent; onEdit?: (text: string) => void }) {
   return (
-    <div className="flex justify-end px-5 py-1">
-      <div className="bg-ax-brand/10 border border-ax-brand/20 rounded-lg px-3 py-2 max-w-[80%]">
+    <div className="flex justify-end px-5 py-1 group">
+      <div className="relative bg-ax-brand/10 border border-ax-brand/20 rounded-lg px-3 py-2 max-w-[80%]">
         <div className="text-small text-ax-text-primary whitespace-pre-wrap">{event.text}</div>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(event.text || '')}
+            className="absolute -left-7 top-1/2 -translate-y-1/2 p-1 rounded
+              opacity-0 group-hover:opacity-100 transition-opacity
+              text-ax-text-ghost hover:text-ax-text-secondary hover:bg-ax-sunken/50"
+            aria-label="Edit and resend from this point"
+            title="Edit and resend"
+          >
+            <PenLine size={12} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -38,7 +50,7 @@ export function UserMessageCard({ event }: { event: AgentEvent }) {
 export function TextCard({ event }: { event: AgentEvent }) {
   const content = useMemo(() => event.text || '', [event.text])
   return (
-    <div className="px-5 py-1.5">
+    <div className="px-5 py-1.5 animate-fade-in">
       <div className="agent-markdown text-small text-ax-text-primary leading-relaxed">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
       </div>
@@ -53,7 +65,7 @@ export function ThinkingCard({ event }: { event: AgentEvent }) {
   return (
     <button
       onClick={() => setOpen(!open)}
-      className="w-full text-left px-5 py-1 hover:bg-ax-sunken/30 transition-colors group"
+      className="w-full text-left px-5 py-1 hover:bg-ax-sunken/30 transition-colors group animate-fade-in"
     >
       <div className="flex items-center gap-1.5">
         <Brain size={9} className="text-ax-text-tertiary shrink-0" />
@@ -110,7 +122,7 @@ export function ToolUseCard({ event, result }: { event: AgentEvent; result?: Age
   const color = known ? TOOL_COLOR[name as KnownTool] : 'text-ax-text-secondary'
 
   return (
-    <div className={`mx-4 rounded-md overflow-hidden ${
+    <div className={`mx-4 rounded-md overflow-hidden animate-fade-in ${
       result?.isError ? 'border border-ax-error/20' : 'border border-ax-border-subtle/60'
     }`}>
       {/* Header — always visible */}
@@ -170,6 +182,10 @@ function ToolSummary({ event }: { event: AgentEvent }) {
       label = i.pattern as string || ''; break
     case 'Grep':
       label = `/${i.pattern as string}/`; break
+    case 'WebSearch':
+      label = i.query as string || ''; break
+    case 'WebFetch':
+      label = shortPath(i.url as string) || ''; break
     default: return null
   }
   return <code className="text-[10px] font-mono text-ax-text-ghost truncate max-w-[200px]">{label}</code>
@@ -190,6 +206,8 @@ function ToolInput({ name, input }: { name: string; input?: Record<string, unkno
     case 'Bash':   return <BashInput input={input} />
     case 'Read':   return <ReadInput input={input} />
     case 'Glob': case 'Grep': return <SearchInput name={name} input={input} />
+    case 'WebSearch': return <WebSearchInput input={input} />
+    case 'WebFetch':  return <WebFetchInput input={input} />
     default:
       return (
         <pre className="px-2.5 py-1.5 font-mono text-[10px] text-ax-text-tertiary overflow-x-auto max-h-24 overflow-y-auto">
@@ -290,6 +308,43 @@ function SearchInput({ name, input }: { name: string; input: Record<string, unkn
   )
 }
 
+/* ── WebSearch: query display ──────────────────────────────────── */
+
+function WebSearchInput({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="px-2.5 py-1.5 flex items-center gap-1.5 font-mono text-[10px]">
+      <Search size={10} className="text-ax-info shrink-0" />
+      <span className="text-ax-text-ghost">search</span>
+      <code className="text-ax-info font-medium">{input.query as string}</code>
+    </div>
+  )
+}
+
+/* ── WebFetch: URL + prompt ───────────────────────────────────── */
+
+function WebFetchInput({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="px-2.5 py-1.5 space-y-1">
+      <div className="flex items-center gap-1.5 font-mono text-[10px]">
+        <Globe size={10} className="text-ax-info shrink-0" />
+        <a
+          href={input.url as string}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-ax-info hover:underline truncate max-w-[300px]"
+        >
+          {input.url as string}
+        </a>
+      </div>
+      {input.prompt && (
+        <div className="text-[10px] text-ax-text-tertiary pl-4 italic truncate">
+          {input.prompt as string}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Tool result rendering ─────────────────────────────────────── */
 
 function ToolResult({ name, result }: { name: string; result: AgentEvent }) {
@@ -360,3 +415,19 @@ export function ErrorCard({ event }: { event: AgentEvent }) {
     </div>
   )
 }
+
+/* ── Session divider (after edit-and-resend) ──────────────────── */
+
+export function SessionDivider() {
+  return (
+    <div className="flex items-center gap-2 px-5 py-1.5 animate-fade-in">
+      <div className="flex-1 h-px bg-ax-warning/30" />
+      <span className="font-mono text-[9px] text-ax-warning/60 flex items-center gap-1">
+        <RotateCcw size={8} />
+        new session
+      </span>
+      <div className="flex-1 h-px bg-ax-warning/30" />
+    </div>
+  )
+}
+

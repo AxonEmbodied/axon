@@ -82,6 +82,8 @@ function classifyAgentMessage(msg: Record<string, unknown>): AgentSSEEvent[] {
     })
   }
 
+  // system/rate_limit events silently skipped (no match above)
+
   return events
 }
 
@@ -338,6 +340,7 @@ export function axonDevApi(): Plugin {
               '--output-format', 'stream-json',
               '--verbose',
               '--allowedTools', tools,
+              '--max-turns', '200',
             ]
 
             const cleanEnv = { ...process.env }
@@ -350,7 +353,6 @@ export function axonDevApi(): Plugin {
               env: cleanEnv,
               cwd,
             })
-            // Close stdin immediately (future: keep open for permission responses)
             child.stdin.end()
 
             let ndjsonBuffer = ''
