@@ -599,7 +599,7 @@ export function SessionsView() {
   const [mode, setMode] = useState<SessionsMode>('canvas')
 
   // Always fetch sessions (needed for both modes)
-  const { sessions, indexStatus, loading, error } = useSessions(activeProject)
+  const { sessions, indexStatus, loading, error, refetch } = useSessions(activeProject)
 
   // Canvas state — only fetches layout when in canvas mode
   const canvasState = useCanvasState(mode === 'canvas' ? activeProject : null)
@@ -683,6 +683,9 @@ export function SessionsView() {
               onReorganize={() => canvasState.reorganize(sessions)}
               onReorgApply={canvasState.applyReorg}
               onReorgCancel={canvasState.cancelReorg}
+              onOpenSession={(id) => useUIStore.getState().openTerminal(id)}
+              onRemoveTile={canvasState.removeTile}
+              onSessionRenamed={refetch}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center">

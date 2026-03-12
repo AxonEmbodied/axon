@@ -644,7 +644,7 @@ function ThinkingIndicator({ phase, project }: { phase: ThinkingPhase; project: 
 
           {/* Context info pill */}
           <div className="flex items-center gap-2 pt-1">
-            <span className="text-micro text-ax-text-tertiary bg-ax-sunken px-2 py-0.5 rounded-full font-mono">
+            <span className="text-micro text-ax-text-tertiary bg-ax-sunken px-2 py-0.5 rounded-full font-mono max-w-[180px] truncate inline-block align-middle">
               {project}
             </span>
             {phase === 'thinking' && elapsed > 3 && (

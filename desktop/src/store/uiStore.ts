@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ViewId = 'timeline' | 'state' | 'decisions' | 'settings' | 'rollup-detail' | 'morning' | 'onboarding' | 'agent' | 'sessions'
+export type ViewId = 'timeline' | 'state' | 'decisions' | 'settings' | 'rollup-detail' | 'morning' | 'onboarding' | 'terminal' | 'agents'
 
 interface UIStore {
   sidebarOpen: boolean
@@ -43,6 +43,6 @@ export const useUIStore = create<UIStore>((set) => ({
   setView: (view) => set({ activeView: view, selectedRollup: null }),
   openRollup: (filename) => set({ activeView: 'rollup-detail', selectedRollup: filename }),
   goBack: () => set({ activeView: 'timeline', selectedRollup: null }),
-  openTerminal: (sessionId) => set({ activeView: 'agent', resumeSessionId: sessionId }),
+  openTerminal: (sessionId) => set({ activeView: 'terminal', resumeSessionId: sessionId }),
   clearResumeSession: () => set({ resumeSessionId: null }),
 }))

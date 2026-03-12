@@ -1,12 +1,15 @@
 import { useProjects } from '@/hooks/useProjects'
 import { useUIStore, type ViewId } from '@/store/uiStore'
-import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
-const navItems: { id: ViewId; label: string; icon: typeof Clock }[] = [
-  { id: 'timeline', label: 'Timeline', icon: Clock },
+const mainNav: { id: ViewId; label: string; icon: typeof Clock }[] = [
   { id: 'morning', label: 'Morning', icon: Coffee },
-  { id: 'sessions', label: 'Sessions', icon: MessageSquare },
-  { id: 'agent', label: 'Agent', icon: Terminal },
+  { id: 'agents', label: 'Agents', icon: Brain },
+  { id: 'timeline', label: 'Timeline', icon: Clock },
+]
+
+const utilNav: { id: ViewId; label: string; icon: typeof Clock }[] = [
+  { id: 'terminal', label: 'Terminal', icon: Terminal },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
@@ -80,7 +83,7 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
             return (
               <button
                 key={p.name}
-                onClick={() => { setActiveProject(p.name); setView('morning') }}
+                onClick={() => setActiveProject(p.name)}
                 aria-label={`Switch to ${p.name}${p.openLoopCount > 0 ? `, ${p.openLoopCount} open loops` : ''}`}
                 aria-pressed={activeProject === p.name}
                 className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 flex items-center gap-3 transition-all duration-150
@@ -107,14 +110,39 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
       )}
 
       {/* Navigation */}
-      <nav className={`${collapsed ? 'px-1' : 'px-3'} flex-1`} aria-label="Main views">
+      <nav className={`${collapsed ? 'px-1' : 'px-3'} flex-1 flex flex-col`} aria-label="Main views">
         {!collapsed && (
           <div className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)] px-2 mb-2" aria-hidden="true">
             Views
           </div>
         )}
-        {navItems.map((item) => {
+        {mainNav.map((item) => {
           const isActive = activeView === item.id || (item.id === 'timeline' && ['rollup-detail', 'state', 'decisions'].includes(activeView))
+          return (
+            <button
+              key={item.id}
+              onClick={() => setView(item.id)}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+              className={`w-full text-left rounded-lg mb-1 flex items-center transition-all duration-150
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
+                ${collapsed ? 'justify-center p-2' : 'px-3 py-2 gap-3'}
+                ${isActive
+                  ? `bg-white/10 text-[var(--ax-text-on-dark)] ${collapsed ? '' : 'border-l-2 border-l-[var(--ax-brand-primary)]'}`
+                  : `text-[var(--ax-text-on-dark-muted)] hover:bg-white/5 hover:text-[var(--ax-text-on-dark)] ${collapsed ? '' : 'border-l-2 border-l-transparent'}`
+                }`}
+            >
+              <item.icon size={collapsed ? 18 : 16} strokeWidth={1.5} aria-hidden="true" />
+              {!collapsed && <span className="text-small">{item.label}</span>}
+            </button>
+          )
+        })}
+
+        {/* Separator */}
+        <div className={`border-t border-white/10 ${collapsed ? 'mx-1' : 'mx-2'} mt-auto mb-2`} />
+
+        {utilNav.map((item) => {
+          const isActive = activeView === item.id
           return (
             <button
               key={item.id}
@@ -142,7 +170,7 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
           {projects.filter(p => p.status === 'active').map((p) => (
             <button
               key={p.name}
-              onClick={() => { setActiveProject(p.name); setView('morning') }}
+              onClick={() => setActiveProject(p.name)}
               aria-label={`Switch to ${p.name}`}
               className={`w-1.5 h-1.5 rounded-full transition-all duration-200
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]

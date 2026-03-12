@@ -743,6 +743,27 @@ export function axonDevApi(): Plugin {
             return
           }
 
+          // PATCH /api/axon/sessions/:id/meta — update session metadata (nickname, tags, etc.)
+          const metaPatchMatch = req.url?.match(/^\/api\/axon\/sessions\/([^/?]+)\/meta$/)
+          if (metaPatchMatch && req.method === 'PATCH') {
+            const sessionId = decodeURIComponent(metaPatchMatch[1])
+            const body = await new Promise<string>((resolve) => {
+              let data = ''
+              req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+              req.on('end', () => resolve(data))
+            })
+            try {
+              const updates = JSON.parse(body)
+              const { updateSessionMeta } = await import('./src/lib/sessionMeta')
+              const entry = updateSessionMeta(sessionId, updates)
+              res.end(JSON.stringify({ ok: true, meta: entry }))
+            } catch (err) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ error: String(err) }))
+            }
+            return
+          }
+
           // --- Session Browser Endpoints ---
 
           // Lazy-init session indexer (non-blocking)

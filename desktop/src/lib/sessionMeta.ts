@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -57,4 +57,13 @@ export function getAllSessionMeta(): Record<string, SessionMetaEntry> {
 
 export function getKnownTags(): string[] {
   return readMeta().knownTags
+}
+
+export function updateSessionMeta(sessionId: string, updates: Partial<SessionMetaEntry>): SessionMetaEntry {
+  const meta = readMeta()
+  const existing = meta.sessions[sessionId] || {}
+  const merged = { ...existing, ...updates }
+  meta.sessions[sessionId] = merged
+  writeFileSync(META_PATH, JSON.stringify(meta, null, 2), 'utf-8')
+  return getEntry(meta, sessionId)
 }

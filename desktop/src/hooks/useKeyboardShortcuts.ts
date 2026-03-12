@@ -38,7 +38,7 @@ export function useKeyboardShortcuts(onTogglePalette: () => void) {
       // Cmd+1-5: switch views
       if (meta && e.key >= '1' && e.key <= '5') {
         e.preventDefault()
-        const views: ViewId[] = ['timeline', 'morning', 'sessions', 'agent', 'settings']
+        const views: ViewId[] = ['morning', 'agents', 'timeline', 'terminal', 'settings']
         const idx = parseInt(e.key) - 1
         if (views[idx]) setView(views[idx])
         return

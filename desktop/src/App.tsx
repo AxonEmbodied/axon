@@ -29,9 +29,9 @@ function ViewRouter() {
       return <MorningView />
     case 'onboarding':
       return <OnboardingView />
-    case 'agent':
+    case 'terminal':
       return <AgentView />
-    case 'sessions':
+    case 'agents':
       return <SessionsView />
     default:
       return <TimelineView />

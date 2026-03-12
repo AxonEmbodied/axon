@@ -19,7 +19,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const swipeDirection = useProjectStore((s) => s.swipeDirection)
   const activeView = useUIStore((s) => s.activeView)
-  const isFullBleed = activeView === 'agent' || activeView === 'sessions'
+  const isFullBleed = activeView === 'terminal' || activeView === 'agents'
 
   // Determine animation class based on swipe direction
   const swipeClass = swipeDirection === 'right' ? 'animate-slide-right'

@@ -10,7 +10,7 @@ export function NeuralBackground() {
   const activeProject = useProjectStore((s) => s.activeProject)
   const activeView = useUIStore((s) => s.activeView)
   const [imgFailed, setImgFailed] = useState<string | null>(null)
-  const muted = activeView === 'agent'
+  const muted = activeView === 'terminal'
 
   const gourceUrl = activeProject
     ? `/api/axon/projects/${encodeURIComponent(activeProject)}/gource`

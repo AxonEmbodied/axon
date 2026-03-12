@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
-import { Maximize2, Star, RefreshCw, Check, X } from 'lucide-react'
+import { Maximize2, Star, RefreshCw, Check, X, Pencil } from 'lucide-react'
 import {
   GRID, TILE_W, TILE_H,
   snap, getZoneDepth, getDescendantZoneIds,
@@ -71,6 +71,9 @@ interface CanvasViewProps {
   onReorganize: () => void
   onReorgApply: () => void
   onReorgCancel: () => void
+  onOpenSession?: (sessionId: string) => void
+  onRemoveTile?: (sessionId: string) => void
+  onSessionRenamed?: () => void
 }
 
 /* ── Component ─────────────────────────────────────────────────── */
@@ -80,7 +83,7 @@ export function CanvasView({
   zoneLayouts, tilePositionMap,
   dispatchTiles, dispatchZones, setViewport,
   scheduleSave, immediateSave,
-  reorgActive, onReorganize, onReorgApply, onReorgCancel,
+  reorgActive, onReorganize, onReorgApply, onReorgCancel, onOpenSession, onRemoveTile, onSessionRenamed,
 }: CanvasViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
@@ -91,6 +94,8 @@ export function CanvasView({
   const [hoverZoneId, setHoverZoneId] = useState<string | null>(null)
   const [droppedTileId, setDroppedTileId] = useState<string | null>(null)
   const [flashZoneId, setFlashZoneId] = useState<string | null>(null)
+  const [editingTileId, setEditingTileId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   // Keep ref synced
   viewportRef.current = viewport
@@ -105,6 +110,25 @@ export function CanvasView({
     viewport.scale > 0.4 ? 'full' : viewport.scale > 0.15 ? 'thumb' : 'dot'
   )
   const scaleClassRef = useRef(scaleClass)
+
+  /* ── Rename commit ───────────────────────────────────────────── */
+
+  const commitRename = useCallback(async (sessionId: string, value: string) => {
+    setEditingTileId(null)
+    const trimmed = value.trim()
+    const session = sessionMap.get(sessionId)
+    const current = session?.nickname || session?.first_prompt || ''
+    if (trimmed === current || !trimmed) return
+    try {
+      await fetch(`/api/axon/sessions/${encodeURIComponent(sessionId)}/meta`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname: trimmed }),
+      })
+      // Refresh session list to pick up new nickname
+      onSessionRenamed?.()
+    } catch { /* silent */ }
+  }, [sessionMap, onSessionRenamed])
 
   /* ── Apply viewport transform to DOM ──────────────────────────── */
 
@@ -411,6 +435,14 @@ export function CanvasView({
       setIsDragging(false)
       setHoverZoneId(null)
 
+      if (!d.hasMoved) {
+        // Click (no drag) on tile — open session
+        if (d.type === 'tile' && d.targetId && onOpenSession) {
+          onOpenSession(d.targetId)
+        }
+        return
+      }
+
       if (d.hasMoved) {
         if (d.type === 'tile' && d.targetId) {
           const v = viewportRef.current
@@ -592,7 +624,7 @@ export function CanvasView({
               key={tile.sessionId}
               data-tile-id={tile.sessionId}
               className={`absolute bg-ax-elevated rounded-lg border border-ax-border
-                cursor-grab overflow-hidden flex flex-col canvas-tile
+                cursor-grab overflow-hidden flex flex-col canvas-tile group
                 ${isDropped ? 'canvas-tile-dropped' : ''}
                 ${reorgActive ? 'canvas-reorg-transition' : ''}`}
               style={{
@@ -605,17 +637,58 @@ export function CanvasView({
                 <div className="h-[2px] w-full shrink-0" style={{ backgroundColor: zone.color }} />
               )}
 
+              {/* Hover actions: rename + remove */}
+              <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    setEditingTileId(tile.sessionId)
+                    setEditValue(session?.nickname || session?.first_prompt || '')
+                  }}
+                  className="p-0.5 rounded text-ax-text-ghost hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors"
+                  title="Rename"
+                >
+                  <Pencil size={10} />
+                </button>
+                {onRemoveTile && (
+                  <button
+                    onClick={() => onRemoveTile(tile.sessionId)}
+                    className="p-0.5 rounded text-ax-text-ghost hover:text-ax-error hover:bg-ax-sunken transition-colors"
+                    title="Remove from canvas"
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
+
               {/* Title */}
               <div className="px-3 pt-2 pb-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  {session?.pinned && (
-                    <Star size={10} className="text-ax-warning fill-current shrink-0" />
-                  )}
-                  <span className="font-serif italic text-[13px] text-ax-text-primary truncate">
-                    {session?.nickname || session?.first_prompt || 'Untitled'}
-                  </span>
-                </div>
-                {session?.heuristic_summary && (
+                {editingTileId === tile.sessionId ? (
+                  <input
+                    autoFocus
+                    className="w-full font-serif italic text-[13px] text-ax-text-primary bg-transparent
+                      border-b border-ax-brand outline-none px-0 py-0"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => commitRename(tile.sessionId, editValue)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename(tile.sessionId, editValue)
+                      if (e.key === 'Escape') setEditingTileId(null)
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    {session?.pinned && (
+                      <Star size={10} className="text-ax-warning fill-current shrink-0" />
+                    )}
+                    <span className="font-serif italic text-[13px] text-ax-text-primary truncate">
+                      {session?.nickname || session?.first_prompt || 'Untitled'}
+                    </span>
+                  </div>
+                )}
+                {!editingTileId && session?.heuristic_summary && (
                   <p className="text-[10px] text-ax-text-tertiary mt-0.5 line-clamp-2">
                     {session.heuristic_summary}
                   </p>

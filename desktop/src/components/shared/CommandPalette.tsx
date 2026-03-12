@@ -29,7 +29,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       { id: 'nav-morning', label: 'Morning', category: 'navigation', icon: Coffee, action: () => { setView('morning'); onClose() }, keywords: 'briefing session chat' },
       { id: 'nav-state', label: 'State', category: 'navigation', icon: Layers, action: () => { setView('state'); onClose() }, keywords: 'dashboard focus' },
       { id: 'nav-decisions', label: 'Decisions', category: 'navigation', icon: Brain, action: () => { setView('decisions'); onClose() }, keywords: 'traces search' },
-      { id: 'nav-agent', label: 'Agent', category: 'navigation', icon: Terminal, action: () => { setView('agent'); onClose() }, keywords: 'agent run claude tools terminal' },
+      { id: 'nav-agents', label: 'Agents', category: 'navigation', icon: Brain, action: () => { setView('agents'); onClose() }, keywords: 'agents command center sessions canvas' },
+      { id: 'nav-terminal', label: 'Terminal', category: 'navigation', icon: Terminal, action: () => { setView('terminal'); onClose() }, keywords: 'terminal run claude tools' },
       { id: 'nav-settings', label: 'Settings', category: 'navigation', icon: Settings, action: () => { setView('settings'); onClose() }, keywords: 'config preferences' },
       // Actions
       { id: 'action-theme', label: theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode', category: 'action', icon: theme === 'light' ? Moon : Sun, action: () => { toggleTheme(); onClose() }, keywords: 'theme dark light mode' },
