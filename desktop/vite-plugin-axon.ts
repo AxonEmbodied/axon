@@ -1,9 +1,12 @@
 import type { Plugin } from 'vite'
 import { readdir, readFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, writeFileSync, renameSync, mkdirSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { spawn, execSync } from 'child_process'
+import { WebSocketServer } from 'ws'
+import { spawnTerminal, hasTerminal, killTerminal, killAllTerminals } from './src/lib/terminalManager'
+import { setupTerminalWs } from './src/lib/terminalWs'
 
 /* ── Classify Claude stream-json messages into typed SSE events ── */
 
@@ -89,10 +92,38 @@ function classifyAgentMessage(msg: Record<string, unknown>): AgentSSEEvent[] {
 
 export function axonDevApi(): Plugin {
   const AXON_HOME = resolve(join(homedir(), '.axon'))
+  let sessionIndexInitialized = false
 
   return {
     name: 'axon-dev-api',
     configureServer(server) {
+      // --- Terminal WebSocket server ---
+      const wss = new WebSocketServer({ noServer: true })
+      setupTerminalWs(wss)
+
+      // Handle WebSocket upgrade ONLY for terminal path
+      server.httpServer?.on('upgrade', (req, socket, head) => {
+        const url = new URL(req.url || '', `http://${req.headers.host}`)
+        if (url.pathname === '/api/axon/terminal/ws') {
+          const termId = url.searchParams.get('id')
+          if (!termId || !hasTerminal(termId)) {
+            socket.destroy()
+            return
+          }
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req, termId)
+          })
+        }
+        // Non-matching upgrades (e.g. /__vite_hmr) fall through to Vite
+      })
+
+      // Cleanup terminals on server shutdown
+      const cleanup = () => killAllTerminals()
+      process.on('exit', cleanup)
+      process.on('SIGINT', cleanup)
+      process.on('SIGTERM', cleanup)
+      server.httpServer?.on('close', cleanup)
+
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/axon')) return next()
 
@@ -598,6 +629,208 @@ export function axonDevApi(): Plugin {
             }
 
             res.end(JSON.stringify({ initialized, remote, commitCount, lastCommit }))
+            return
+          }
+
+          // --- Canvas Layout Endpoints ---
+
+          const canvasMatch = req.url?.match(/^\/api\/axon\/canvas-layout\?project=([^&]+)$/)
+          if (canvasMatch) {
+            const project = decodeURIComponent(canvasMatch[1])
+
+            // Resolve project_path from workspace config
+            let projectPath = ''
+            try {
+              const cfg = await readFile(
+                join(AXON_HOME, 'workspaces', project, 'config.yaml'), 'utf-8'
+              )
+              projectPath = cfg.match(/^project_path:\s*(.+)$/m)?.[1]?.trim() || ''
+            } catch { /* no config */ }
+
+            const canvasId = projectPath ? projectPath.replace(/\//g, '-') : ''
+            const layoutDir = join(homedir(), '.claude', 'canvas-layouts')
+            const layoutPath = canvasId ? join(layoutDir, `${canvasId}.json`) : ''
+
+            if (req.method === 'GET') {
+              // GET /api/axon/canvas-layout?project=name
+              if (!layoutPath) {
+                res.end(JSON.stringify({ tiles: [], zones: [], viewport: { x: 0, y: 0, scale: 1 } }))
+                return
+              }
+              try {
+                const content = await readFile(layoutPath, 'utf-8')
+                res.end(content)
+              } catch {
+                res.end(JSON.stringify({ tiles: [], zones: [], viewport: { x: 0, y: 0, scale: 1 } }))
+              }
+              return
+            }
+
+            if (req.method === 'PUT') {
+              // PUT /api/axon/canvas-layout?project=name
+              const body = await new Promise<string>((resolve) => {
+                let data = ''
+                req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+                req.on('end', () => resolve(data))
+              })
+
+              if (!layoutPath) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: 'No project_path in config' }))
+                return
+              }
+
+              const incoming = JSON.parse(body)
+
+              // Safety: never overwrite populated layout with empty tiles
+              if ((!incoming.tiles || incoming.tiles.length === 0) && existsSync(layoutPath)) {
+                try {
+                  const existing = JSON.parse(await readFile(layoutPath, 'utf-8'))
+                  if (existing.tiles && existing.tiles.length > 0) {
+                    res.statusCode = 409
+                    res.end(JSON.stringify({ error: 'Refusing to overwrite populated layout with empty' }))
+                    return
+                  }
+                } catch { /* file unreadable, allow overwrite */ }
+              }
+
+              // Atomic write: temp file + rename
+              mkdirSync(layoutDir, { recursive: true })
+              const tmpPath = layoutPath + '.tmp'
+              writeFileSync(tmpPath, JSON.stringify(incoming))
+              renameSync(tmpPath, layoutPath)
+              res.end(JSON.stringify({ ok: true }))
+              return
+            }
+          }
+
+          // --- Terminal Endpoints ---
+
+          // POST /api/axon/terminal/spawn
+          if (req.url === '/api/axon/terminal/spawn' && req.method === 'POST') {
+            const body = await new Promise<string>((resolve) => {
+              let data = ''
+              req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+              req.on('end', () => resolve(data))
+            })
+
+            const { project, sessionId, command } = JSON.parse(body) as {
+              project: string
+              sessionId?: string
+              command?: string
+            }
+
+            // Resolve project cwd from config
+            let cwd = process.cwd()
+            try {
+              const cfg = await readFile(
+                join(AXON_HOME, 'workspaces', project, 'config.yaml'), 'utf-8'
+              )
+              const projectPath = cfg.match(/^project_path:\s*(.+)$/m)?.[1]?.trim()
+              if (projectPath && existsSync(projectPath)) cwd = projectPath
+            } catch { /* use cwd */ }
+
+            const terminalId = spawnTerminal(cwd, command, sessionId)
+            res.end(JSON.stringify({ terminalId }))
+            return
+          }
+
+          // DELETE /api/axon/terminal/:id
+          const termKillMatch = req.url?.match(/^\/api\/axon\/terminal\/([^/?]+)$/)
+          if (termKillMatch && req.method === 'DELETE') {
+            killTerminal(termKillMatch[1])
+            res.end(JSON.stringify({ ok: true }))
+            return
+          }
+
+          // --- Session Browser Endpoints ---
+
+          // Lazy-init session indexer (non-blocking)
+          if (!sessionIndexInitialized && req.url?.startsWith('/api/axon/sessions')) {
+            sessionIndexInitialized = true
+            try {
+              const { runFullIndex } = await import('./src/lib/sessionIndexer')
+              runFullIndex()
+            } catch (err) {
+              console.error('[Axon] Session indexer init failed:', err)
+            }
+          }
+
+          // GET /api/axon/sessions/status
+          if (req.url === '/api/axon/sessions/status') {
+            try {
+              const { getIndexStatus } = await import('./src/lib/sessionDb')
+              res.end(JSON.stringify(getIndexStatus()))
+            } catch {
+              res.end(JSON.stringify({ totalSessions: 0, analyticsIndexed: 0, ftsIndexed: 0, ready: false }))
+            }
+            return
+          }
+
+          // GET /api/axon/sessions/search?q={query}
+          const sessionSearchMatch = req.url?.match(/^\/api\/axon\/sessions\/search\?q=(.+)$/)
+          if (sessionSearchMatch) {
+            const query = decodeURIComponent(sessionSearchMatch[1])
+            try {
+              const { searchSessions } = await import('./src/lib/sessionDb')
+              const { getAllSessionMeta } = await import('./src/lib/sessionMeta')
+              const results = searchSessions(query)
+              const meta = getAllSessionMeta()
+              const enriched = results.map(r => ({
+                ...r,
+                tags: meta[r.id]?.tags || [],
+                pinned: meta[r.id]?.pinned || false,
+                nickname: meta[r.id]?.nickname || null,
+              }))
+              res.end(JSON.stringify({ results: enriched }))
+            } catch (err) {
+              res.end(JSON.stringify({ results: [], error: String(err) }))
+            }
+            return
+          }
+
+          // GET /api/axon/sessions/{id}
+          const sessionDetailMatch = req.url?.match(/^\/api\/axon\/sessions\/([0-9a-f-]{36})$/)
+          if (sessionDetailMatch) {
+            const id = sessionDetailMatch[1]
+            try {
+              const { getSessionById, getFilesTouched } = await import('./src/lib/sessionDb')
+              const { getSessionMeta } = await import('./src/lib/sessionMeta')
+              const session = getSessionById(id)
+              if (!session) {
+                res.statusCode = 404
+                res.end(JSON.stringify({ error: 'Session not found' }))
+                return
+              }
+              const filesTouched = getFilesTouched(id)
+              const meta = getSessionMeta(id)
+              res.end(JSON.stringify({ session: { ...session, ...meta }, filesTouched }))
+            } catch (err) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: String(err) }))
+            }
+            return
+          }
+
+          // GET /api/axon/sessions?project={name}
+          const sessionsMatch = req.url?.match(/^\/api\/axon\/sessions(\?project=([^&]+))?$/)
+          if (sessionsMatch) {
+            const projectName = sessionsMatch[2] ? decodeURIComponent(sessionsMatch[2]) : undefined
+            try {
+              const { getSessions, getIndexStatus } = await import('./src/lib/sessionDb')
+              const { getAllSessionMeta } = await import('./src/lib/sessionMeta')
+              const sessions = getSessions(projectName)
+              const meta = getAllSessionMeta()
+              const enriched = sessions.map(s => ({
+                ...s,
+                tags: meta[s.id]?.tags || [],
+                pinned: meta[s.id]?.pinned || false,
+                nickname: meta[s.id]?.nickname || null,
+              }))
+              res.end(JSON.stringify({ sessions: enriched, indexStatus: getIndexStatus() }))
+            } catch (err) {
+              res.end(JSON.stringify({ sessions: [], indexStatus: { totalSessions: 0, analyticsIndexed: 0, ftsIndexed: 0, ready: false }, error: String(err) }))
+            }
             return
           }
 

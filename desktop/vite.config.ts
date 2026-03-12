@@ -16,6 +16,12 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
   },
+  optimizeDeps: {
+    exclude: ['node-pty'],
+  },
+  ssr: {
+    external: ['node-pty', 'ws', 'better-sqlite3'],
+  },
   test: {
     environment: 'jsdom',
     globals: true,

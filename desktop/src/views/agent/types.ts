@@ -1,3 +1,5 @@
+export type AgentMode = 'headless' | 'terminal'
+
 export type AgentStatus = 'idle' | 'running' | 'complete' | 'error'
 
 export type AgentEventKind =

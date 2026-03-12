@@ -8,6 +8,7 @@ import { DecisionsView } from '@/views/DecisionsView'
 import { MorningView } from '@/views/MorningView'
 import { OnboardingView } from '@/views/OnboardingView'
 import { AgentView } from '@/views/AgentView'
+import { SessionsView } from '@/views/SessionsView'
 import { useUIStore } from '@/store/uiStore'
 
 function ViewRouter() {
@@ -30,6 +31,8 @@ function ViewRouter() {
       return <OnboardingView />
     case 'agent':
       return <AgentView />
+    case 'sessions':
+      return <SessionsView />
     default:
       return <TimelineView />
   }

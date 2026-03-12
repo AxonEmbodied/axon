@@ -1,18 +1,21 @@
 import { create } from 'zustand'
 
-export type ViewId = 'timeline' | 'state' | 'decisions' | 'settings' | 'rollup-detail' | 'morning' | 'onboarding' | 'agent'
+export type ViewId = 'timeline' | 'state' | 'decisions' | 'settings' | 'rollup-detail' | 'morning' | 'onboarding' | 'agent' | 'sessions'
 
 interface UIStore {
   sidebarOpen: boolean
   theme: 'light' | 'dark'
   activeView: ViewId
   selectedRollup: string | null
+  resumeSessionId: string | null
   toggleSidebar: () => void
   setTheme: (theme: 'light' | 'dark') => void
   toggleTheme: () => void
   setView: (view: ViewId) => void
   openRollup: (filename: string) => void
   goBack: () => void
+  openTerminal: (sessionId: string) => void
+  clearResumeSession: () => void
 }
 
 function getInitialTheme(): 'light' | 'dark' {
@@ -26,6 +29,7 @@ export const useUIStore = create<UIStore>((set) => ({
   theme: getInitialTheme(),
   activeView: 'timeline',
   selectedRollup: null,
+  resumeSessionId: null,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setTheme: (theme) => {
     localStorage.setItem('ax-theme', theme)
@@ -39,4 +43,6 @@ export const useUIStore = create<UIStore>((set) => ({
   setView: (view) => set({ activeView: view, selectedRollup: null }),
   openRollup: (filename) => set({ activeView: 'rollup-detail', selectedRollup: filename }),
   goBack: () => set({ activeView: 'timeline', selectedRollup: null }),
+  openTerminal: (sessionId) => set({ activeView: 'agent', resumeSessionId: sessionId }),
+  clearResumeSession: () => set({ resumeSessionId: null }),
 }))

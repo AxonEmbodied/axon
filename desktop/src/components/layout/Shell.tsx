@@ -19,7 +19,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const swipeDirection = useProjectStore((s) => s.swipeDirection)
   const activeView = useUIStore((s) => s.activeView)
-  const isAgent = activeView === 'agent'
+  const isFullBleed = activeView === 'agent' || activeView === 'sessions'
 
   // Determine animation class based on swipe direction
   const swipeClass = swipeDirection === 'right' ? 'animate-slide-right'
@@ -33,7 +33,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <main className="flex-1 overflow-y-auto bg-ax-base relative" role="main" aria-label="Main content" id="main-content">
         <NeuralBackground />
         <DebugMenu />
-        <div className={`relative ${isAgent ? 'h-full' : 'max-w-3xl mx-auto px-8 py-10'} ${swipeClass}`} key={useProjectStore.getState().activeProject || 'none'}>
+        <div className={`relative ${isFullBleed ? 'h-full' : 'max-w-3xl mx-auto px-8 py-10'} ${swipeClass}`} key={useProjectStore.getState().activeProject || 'none'}>
           {children}
         </div>
       </main>
