@@ -304,6 +304,20 @@ if [[ -f "$PROTOCOL" ]]; then
     PROTOCOL_TEXT=$(cat "$PROTOCOL")
 fi
 
+# Load user context if available
+USER_CONTEXT_BLOCK=""
+if [[ -f "$WORKSPACE/config.yaml" ]]; then
+    USER_CONTEXT=$(sed -n '/^user_context: |/,/^[^ ]/{ /^user_context: |/d; /^[^ ]/d; s/^  //; p; }' "$WORKSPACE/config.yaml")
+    if [[ -n "$USER_CONTEXT" ]]; then
+        USER_CONTEXT_BLOCK="
+## User Context
+The person using Axon has described their relationship to this project:
+$USER_CONTEXT
+
+Tailor the morning briefing to their perspective and role. Focus on what matters to them."
+    fi
+fi
+
 # Load TODO list if available
 TODO_BRIEFING=""
 if [[ -f "$WORKSPACE/todos.md" ]]; then
@@ -328,6 +342,7 @@ $LATEST_ROLLUP
 ## Gap Context
 $GAP_CONTEXT
 $TODO_BRIEFING
+$USER_CONTEXT_BLOCK
 ## Morning Session
 This is a morning briefing session. The developer just sat down. Greet them with a concise briefing based on the state and latest rollup. Then stay in conversation — they may want to discuss priorities, ask questions, or plan today.
 

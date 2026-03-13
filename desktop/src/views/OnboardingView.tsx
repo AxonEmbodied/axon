@@ -22,7 +22,7 @@ interface ContextStatus {
   lastCommit: string
 }
 
-type OnboardingStep = 'select-repo' | 'axon-context' | 'genesis' | 'review'
+type OnboardingStep = 'select-repo' | 'axon-context' | 'user-context' | 'genesis' | 'review'
 
 type GenesisPhase = 'reading' | 'scanning' | 'analyzing' | 'composing' | 'done'
 
@@ -39,6 +39,7 @@ const GENESIS_PHASES: Record<GenesisPhase, { label: string; detail: string }> = 
 export function OnboardingView() {
   const [step, setStep] = useState<OnboardingStep>('select-repo')
   const [selectedRepo, setSelectedRepo] = useState<DiscoveredRepo | null>(null)
+  const [userContext, setUserContext] = useState('')
   const [genesisContent, setGenesisContent] = useState('')
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
 
@@ -55,6 +56,7 @@ export function OnboardingView() {
         <h1 className="font-serif text-h1 text-ax-text-primary">
           {step === 'select-repo' && 'Choose a repository'}
           {step === 'axon-context' && 'Knowledge versioning'}
+          {step === 'user-context' && 'Your role'}
           {step === 'genesis' && 'Genesis'}
           {step === 'review' && 'Your project, remembered'}
         </h1>
@@ -79,13 +81,23 @@ export function OnboardingView() {
         {step === 'axon-context' && selectedRepo && (
           <AxonContextSetup
             repo={selectedRepo}
-            onContinue={() => goTo('genesis', 'forward')}
+            onContinue={() => goTo('user-context', 'forward')}
             onBack={() => goTo('select-repo', 'back')}
+          />
+        )}
+        {step === 'user-context' && selectedRepo && (
+          <UserContextStep
+            onContinue={(ctx) => {
+              setUserContext(ctx)
+              goTo('genesis', 'forward')
+            }}
+            onBack={() => goTo('axon-context', 'back')}
           />
         )}
         {step === 'genesis' && selectedRepo && (
           <GenesisProgress
             repo={selectedRepo}
+            userContext={userContext}
             onComplete={(content) => {
               setGenesisContent(content)
               goTo('review', 'forward')
@@ -108,25 +120,26 @@ export function OnboardingView() {
 const STEPS: { id: OnboardingStep; label: string; num: number }[] = [
   { id: 'select-repo', label: 'Repository', num: 1 },
   { id: 'axon-context', label: 'Context', num: 2 },
-  { id: 'genesis', label: 'Genesis', num: 3 },
-  { id: 'review', label: 'Review', num: 4 },
+  { id: 'user-context', label: 'Role', num: 3 },
+  { id: 'genesis', label: 'Genesis', num: 4 },
+  { id: 'review', label: 'Review', num: 5 },
 ]
 
 function StepIndicator({ current }: { current: OnboardingStep }) {
   const currentIdx = STEPS.findIndex(s => s.id === current)
 
   return (
-    <div className="flex items-center gap-0 mb-10">
+    <div className="flex items-center justify-between mb-10">
       {STEPS.map((s, i) => {
         const isComplete = i < currentIdx
         const isCurrent = i === currentIdx
 
         return (
-          <div key={s.id} className="flex items-center">
+          <div key={s.id} className="flex items-center flex-1 last:flex-none">
             {/* Step node */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 shrink-0">
               <div className={`
-                relative w-7 h-7 rounded-full flex items-center justify-center
+                relative w-6 h-6 rounded-full flex items-center justify-center
                 transition-all duration-400 ease-out
                 ${isComplete
                   ? 'bg-ax-accent text-white scale-90'
@@ -136,16 +149,16 @@ function StepIndicator({ current }: { current: OnboardingStep }) {
                 }
               `}>
                 {isComplete ? (
-                  <Check size={12} strokeWidth={2.5} />
+                  <Check size={10} strokeWidth={2.5} />
                 ) : (
-                  <span className="font-mono text-[11px] font-medium">{s.num}</span>
+                  <span className="font-mono text-[10px] font-medium">{s.num}</span>
                 )}
                 {isCurrent && (
                   <div className="absolute inset-0 rounded-full animate-ping-slow bg-ax-brand/20" />
                 )}
               </div>
               <span className={`
-                font-mono text-small transition-all duration-300
+                font-mono text-micro transition-all duration-300
                 ${isComplete
                   ? 'text-ax-accent font-medium'
                   : isCurrent
@@ -158,7 +171,7 @@ function StepIndicator({ current }: { current: OnboardingStep }) {
             </div>
             {/* Connector line */}
             {i < STEPS.length - 1 && (
-              <div className="w-10 mx-3 h-[2px] rounded-full overflow-hidden bg-ax-sunken">
+              <div className="flex-1 mx-3 h-[2px] rounded-full overflow-hidden bg-ax-sunken min-w-4">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ease-out ${
                     i < currentIdx ? 'w-full bg-ax-accent' : 'w-0 bg-ax-brand'
@@ -516,7 +529,71 @@ function AxonContextSetup({ repo, onContinue, onBack }: {
             hover:shadow-[0_4px_16px_rgba(var(--ax-shadow-color),0.2)]
             hover:-translate-y-0.5"
         >
-          Begin Genesis
+          Continue
+          <ArrowRight size={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 3: User Context ──────────────────────────────────────
+
+function UserContextStep({ onContinue, onBack }: {
+  onContinue: (context: string) => void
+  onBack: () => void
+}) {
+  const [context, setContext] = useState('')
+
+  return (
+    <div className="space-y-6">
+      <p className="text-body text-ax-text-secondary leading-relaxed max-w-2xl">
+        Help Axon understand <strong className="text-ax-text-primary">who you are</strong> in relation to this project. This shapes how rollups, briefings, and recommendations are tailored to you.
+      </p>
+
+      <div className="space-y-3">
+        <label className="text-small font-medium text-ax-text-primary">
+          What's your relationship to this project? What are you trying to get out of it?
+        </label>
+        <textarea
+          value={context}
+          onChange={e => setContext(e.target.value)}
+          placeholder="e.g. I'm the lead developer pushing this project forward, focused on shipping the desktop app and CLI tools.
+
+Or: I only work on the analytics module — I don't need context about the frontend.
+
+Or: I'm the CEO reviewing high-level progress and making strategic decisions."
+          className="w-full h-36 px-4 py-3 rounded-xl bg-ax-elevated border border-ax-border
+            text-body text-ax-text-primary placeholder:text-ax-text-ghost leading-relaxed
+            focus:outline-none focus:border-ax-brand focus:ring-1 focus:ring-ax-brand/20
+            transition-colors resize-none"
+        />
+      </div>
+
+      <div className="px-4 py-3 rounded-lg bg-ax-sunken border border-ax-border-subtle">
+        <p className="text-small text-ax-text-tertiary leading-relaxed">
+          <strong className="text-ax-text-secondary">Optional.</strong> If you skip this, Axon assumes you're a full contributor and will cover the entire project equally. You can always change this later in Settings.
+        </p>
+      </div>
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between pt-2">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-small text-ax-text-tertiary hover:text-ax-brand transition-colors"
+        >
+          <ArrowLeft size={14} />
+          Back
+        </button>
+        <button
+          onClick={() => onContinue(context)}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-ax-brand text-white font-medium
+            hover:bg-ax-brand-hover transition-all duration-200
+            shadow-[0_2px_8px_rgba(var(--ax-shadow-color),0.15)]
+            hover:shadow-[0_4px_16px_rgba(var(--ax-shadow-color),0.2)]
+            hover:-translate-y-0.5"
+        >
+          {context.trim() ? 'Begin Genesis' : 'Skip & Begin Genesis'}
           <Zap size={16} />
         </button>
       </div>
@@ -524,10 +601,11 @@ function AxonContextSetup({ repo, onContinue, onBack }: {
   )
 }
 
-// ─── Step 3: Genesis Progress ───────────────────────────────────
+// ─── Step 4: Genesis Progress ───────────────────────────────────
 
-function GenesisProgress({ repo, onComplete }: {
+function GenesisProgress({ repo, userContext, onComplete }: {
   repo: DiscoveredRepo
+  userContext?: string
   onComplete: (content: string) => void
 }) {
   const [phase, setPhase] = useState<GenesisPhase>('reading')
@@ -570,6 +648,7 @@ function GenesisProgress({ repo, onComplete }: {
           body: JSON.stringify({
             projectName: repo.name,
             projectPath: repo.path,
+            ...(userContext ? { userContext } : {}),
           }),
         })
 

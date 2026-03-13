@@ -78,6 +78,16 @@ rollup:
 timezone: $(date +%Z)
 EOF
 
+# Append user_context if provided via env var
+if [[ -n "${USER_CONTEXT:-}" ]]; then
+    echo "" >> "$WORKSPACE/config.yaml"
+    echo "# Who you are in relation to this project and what you're trying to get out of it" >> "$WORKSPACE/config.yaml"
+    echo "user_context: |" >> "$WORKSPACE/config.yaml"
+    echo "$USER_CONTEXT" | while IFS= read -r line; do
+        echo "  $line" >> "$WORKSPACE/config.yaml"
+    done
+fi
+
 echo "Workspace created."
 echo ""
 
@@ -133,6 +143,18 @@ echo "Generating genesis rollup (this may take 1-2 minutes)..."
 echo ""
 
 # Build the genesis prompt
+# Read user_context if set
+USER_CONTEXT_BLOCK=""
+if [[ -n "${USER_CONTEXT:-}" ]]; then
+    USER_CONTEXT_BLOCK="
+## User Context
+The person using Axon has described their relationship to this project:
+$USER_CONTEXT
+
+Tailor the genesis rollup to their perspective — focus on the areas and concerns they've described. If they only work in one area, zoom into that area deeply rather than covering everything equally.
+"
+fi
+
 GENESIS_RESULT=$(echo "You are Axon, producing a GENESIS ROLLUP — your first look at this project.
 
 ## IMPORTANT: Epistemic Honesty
@@ -157,7 +179,7 @@ $DIR_STRUCT
 
 ## Last 90 Days of Commits
 $GIT_LOG_90
-
+$USER_CONTEXT_BLOCK
 ## Task
 
 Produce a GENESIS ROLLUP with:

@@ -115,6 +115,22 @@ $RECENT_MUTATIONS
     echo "  ✓ TODOs loaded ($TODO_ACTIVE active)"
 fi
 
+# Read user_context from config.yaml if present
+USER_CONTEXT_BLOCK=""
+if [[ -f "$WORKSPACE/config.yaml" ]]; then
+    USER_CONTEXT=$(sed -n '/^user_context: |/,/^[^ ]/{ /^user_context: |/d; /^[^ ]/d; s/^  //; p; }' "$WORKSPACE/config.yaml")
+    if [[ -n "$USER_CONTEXT" ]]; then
+        USER_CONTEXT_BLOCK="
+## User Context
+The person using Axon has described their relationship to this project:
+$USER_CONTEXT
+
+Tailor the rollup to their perspective — focus on the areas and concerns they've described. Recommended next steps should be relevant to their role.
+"
+        echo "  ✓ User context loaded"
+    fi
+fi
+
 DENDRITE_COUNT=$(find "$WORKSPACE/dendrites" -name "*.md" -print 2>/dev/null | wc -l | tr -d ' ')
 EPISODE_COUNT=$(find "$WORKSPACE/episodes" -name "*.md" -print 2>/dev/null | wc -l | tr -d ' ')
 echo "  ✓ State loaded"
@@ -158,6 +174,7 @@ $RECENT_EPISODES
 ## Today's Dendrite Signals
 $DENDRITES
 $TODO_CONTEXT
+$USER_CONTEXT_BLOCK
 ## Task
 Produce today's rollup. Start with YAML frontmatter, then markdown sections.
 
