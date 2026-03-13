@@ -11,6 +11,7 @@ import { MorningView } from '@/views/MorningView'
 import { OnboardingView } from '@/views/OnboardingView'
 import { AgentView } from '@/views/AgentView'
 import { SessionsView } from '@/views/SessionsView'
+import { TodosView } from '@/views/TodosView'
 import { useUIStore, type ViewId } from '@/store/uiStore'
 
 /* ── Carousel pane — lazy-mounted, slides horizontally ────────── */
@@ -194,6 +195,7 @@ function ViewRouter() {
           {activeView === 'rollup-detail' && <RollupDetailView />}
           {activeView === 'state' && <StateView />}
           {activeView === 'decisions' && <DecisionsView />}
+          {activeView === 'todos' && <TodosView />}
           {activeView === 'settings' && <SettingsView />}
           {activeView === 'onboarding' && <OnboardingView />}
         </div>

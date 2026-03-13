@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite'
 import { readdir, readFile } from 'fs/promises'
-import { existsSync, writeFileSync, renameSync, mkdirSync } from 'fs'
+import { existsSync, writeFileSync, renameSync, mkdirSync, appendFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { spawn, execSync } from 'child_process'
@@ -268,6 +268,194 @@ export function axonDevApi(): Plugin {
               res.statusCode = 404
               res.end(JSON.stringify({ error: 'No gource image' }))
             }
+            return
+          }
+
+          // ── TODO ENDPOINTS ──────────────────────────────────────
+
+          // GET /api/axon/projects/:name/todos
+          const todosGetMatch = req.url.match(/^\/api\/axon\/projects\/([^/]+)\/todos$/)
+          if (todosGetMatch && req.method === 'GET') {
+            const project = decodeURIComponent(todosGetMatch[1])
+            const todosPath = join(AXON_HOME, 'workspaces', project, 'todos.md')
+            try {
+              const content = await readFile(todosPath, 'utf-8')
+              res.setHeader('Content-Type', 'application/json')
+              // Parse inline — same logic as todoParser.ts
+              const lines = content.split('\n')
+              const items: Array<Record<string, unknown>> = []
+              let section = 'active'
+              const sectionMap: Record<string, string> = { Active: 'active', Completed: 'completed', Deferred: 'deferred', Dropped: 'dropped' }
+              const markerMap: Record<string, string> = { ' ': 'active', 'x': 'completed', '>': 'deferred', '-': 'dropped' }
+              for (const l of lines) {
+                const sm = l.match(/^## (Active|Completed|Deferred|Dropped)/)
+                if (sm) { section = sectionMap[sm[1]]; continue }
+                const im = l.match(/^- \[(.)\] #(\d+)\s+(.+)$/)
+                if (!im) continue
+                const rest = im[3]
+                const meta: Record<string, string> = {}
+                const mr = /\[(\w+):\s*([^\]]+)\]/g
+                let mm
+                while ((mm = mr.exec(rest)) !== null) meta[mm[1]] = mm[2].trim()
+                const desc = rest.replace(/\s*\[\w+:\s*[^\]]+\]/g, '').trim()
+                items.push({
+                  id: parseInt(im[2], 10),
+                  description: desc,
+                  status: markerMap[im[1]] || section,
+                  priority: meta.priority || 'medium',
+                  created: meta.created || '',
+                  completed: meta.completed,
+                  deferred: meta.deferred,
+                  dropped: meta.dropped,
+                  reason: meta.reason,
+                })
+              }
+              res.end(JSON.stringify({ items }))
+            } catch {
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ items: [] }))
+            }
+            return
+          }
+
+          // POST /api/axon/projects/:name/todos — add item
+          const todosPostMatch = req.url.match(/^\/api\/axon\/projects\/([^/]+)\/todos$/)
+          if (todosPostMatch && req.method === 'POST') {
+            const project = decodeURIComponent(todosPostMatch[1])
+            const ws = join(AXON_HOME, 'workspaces', project)
+            const todosPath = join(ws, 'todos.md')
+            const logPath = join(ws, 'todos-log.md')
+            const streamPath = join(ws, 'stream.md')
+            const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+            const today = now.slice(0, 10)
+
+            const body = await new Promise<string>((resolve) => {
+              let data = ''
+              req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+              req.on('end', () => resolve(data))
+            })
+            const { description, priority = 'medium' } = JSON.parse(body) as { description: string; priority?: string }
+
+            // Read existing or create
+            let content = ''
+            try { content = await readFile(todosPath, 'utf-8') } catch {
+              content = `---\ntype: todos\nproject: ${project}\nupdated_at: ${now}\n---\n\n## Active\n\n## Completed\n\n## Deferred\n\n## Dropped\n`
+            }
+
+            // Find max ID
+            const ids = [...content.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10))
+            const nextId = ids.length > 0 ? Math.max(...ids) + 1 : 1
+
+            const newLine = `- [ ] #${nextId} ${description} [created: ${today}] [priority: ${priority}]`
+
+            // Insert after ## Active
+            content = content.replace(/^(## Active\n)/m, `$1${newLine}\n`)
+            content = content.replace(/^updated_at: .*/m, `updated_at: ${now}`)
+
+            writeFileSync(todosPath, content)
+
+            // Log mutation
+            const logLine = `[${now}] ADD #${nextId} "${description}" priority=${priority}\n`
+            const { appendFileSync } = await import('fs')
+            appendFileSync(logPath, logLine)
+            appendFileSync(streamPath, `- [${now}] @axon: todo ADD #${nextId} "${description}" priority=${priority}\n`)
+
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ id: nextId, description, priority, status: 'active', created: today }))
+            return
+          }
+
+          // PATCH /api/axon/projects/:name/todos/:id — update item (complete, defer, drop, reprioritise)
+          const todosPatchMatch = req.url.match(/^\/api\/axon\/projects\/([^/]+)\/todos\/(\d+)$/)
+          if (todosPatchMatch && req.method === 'PATCH') {
+            const project = decodeURIComponent(todosPatchMatch[1])
+            const itemId = todosPatchMatch[2]
+            const ws = join(AXON_HOME, 'workspaces', project)
+            const todosPath = join(ws, 'todos.md')
+            const logPath = join(ws, 'todos-log.md')
+            const streamPath = join(ws, 'stream.md')
+            const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+            const today = now.slice(0, 10)
+
+            const body = await new Promise<string>((resolve) => {
+              let data = ''
+              req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+              req.on('end', () => resolve(data))
+            })
+            const { action, reason, priority } = JSON.parse(body) as { action: string; reason?: string; priority?: string }
+
+            let content = ''
+            try { content = await readFile(todosPath, 'utf-8') } catch {
+              res.statusCode = 404
+              res.end(JSON.stringify({ error: 'No todos.md' }))
+              return
+            }
+
+            // Find the line with this ID
+            const lineRegex = new RegExp(`^- \\[.\\] #${itemId}\\s+(.+)$`, 'm')
+            const lineMatch = content.match(lineRegex)
+            if (!lineMatch) {
+              res.statusCode = 404
+              res.end(JSON.stringify({ error: `Todo #${itemId} not found` }))
+              return
+            }
+
+            const rest = lineMatch[1]
+            const desc = rest.replace(/\s*\[\w+:\s*[^\]]+\]/g, '').trim()
+
+            // Remove old line
+            content = content.replace(lineRegex, '##REMOVE##')
+            content = content.split('\n').filter(l => l !== '##REMOVE##').join('\n')
+
+            let newLine = ''
+            let logAction = action.toUpperCase()
+
+            switch (action) {
+              case 'complete':
+                newLine = `- [x] #${itemId} ${desc} [created: ${today}] [completed: ${today}]`
+                content = content.replace(/^(## Completed\n)/m, `$1${newLine}\n`)
+                break
+              case 'defer':
+                newLine = `- [>] #${itemId} ${desc} [created: ${today}] [deferred: ${today}]`
+                if (reason) newLine += ` [reason: ${reason}]`
+                content = content.replace(/^(## Deferred\n)/m, `$1${newLine}\n`)
+                break
+              case 'drop':
+                newLine = `- [-] #${itemId} ${desc} [created: ${today}] [dropped: ${today}]`
+                if (reason) newLine += ` [reason: ${reason}]`
+                content = content.replace(/^(## Dropped\n)/m, `$1${newLine}\n`)
+                break
+              case 'reactivate':
+                newLine = `- [ ] #${itemId} ${desc} [created: ${today}] [priority: ${priority || 'medium'}]`
+                content = content.replace(/^(## Active\n)/m, `$1${newLine}\n`)
+                logAction = 'REACTIVATE'
+                break
+              case 'reprioritise':
+                if (!priority) {
+                  res.statusCode = 400
+                  res.end(JSON.stringify({ error: 'priority required for reprioritise' }))
+                  return
+                }
+                newLine = `- [ ] #${itemId} ${desc} [created: ${today}] [priority: ${priority}]`
+                content = content.replace(/^(## Active\n)/m, `$1${newLine}\n`)
+                logAction = 'REPRIORITISE'
+                break
+              default:
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: `Unknown action: ${action}` }))
+                return
+            }
+
+            content = content.replace(/^updated_at: .*/m, `updated_at: ${now}`)
+            writeFileSync(todosPath, content)
+
+            const { appendFileSync } = await import('fs')
+            const extra = reason ? ` reason="${reason}"` : priority ? ` priority=${priority}` : ''
+            appendFileSync(logPath, `[${now}] ${logAction} #${itemId} "${desc}"${extra}\n`)
+            appendFileSync(streamPath, `- [${now}] @axon: todo ${logAction} #${itemId} "${desc}"${extra}\n`)
+
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ ok: true, action, id: parseInt(itemId, 10) }))
             return
           }
 

@@ -96,6 +96,25 @@ if [[ ! -f "$PROTOCOL" ]]; then
 fi
 PROTOCOL_TEXT=$(cat "$PROTOCOL")
 
+# Get TODO state if available
+TODO_CONTEXT=""
+if [[ -f "$WORKSPACE/todos.md" ]]; then
+    TODO_CONTEXT="
+## Current TODO List
+$(cat "$WORKSPACE/todos.md")
+"
+    # Include recent mutations
+    if [[ -f "$WORKSPACE/todos-log.md" ]]; then
+        RECENT_MUTATIONS=$(tail -20 "$WORKSPACE/todos-log.md")
+        [[ -n "$RECENT_MUTATIONS" ]] && TODO_CONTEXT+="
+## Recent TODO Mutations
+$RECENT_MUTATIONS
+"
+    fi
+    TODO_ACTIVE=$(awk '/^## Active$/,/^## [A-Z]/' "$WORKSPACE/todos.md" | grep -c '^\- \[' || true)
+    echo "  ✓ TODOs loaded ($TODO_ACTIVE active)"
+fi
+
 DENDRITE_COUNT=$(find "$WORKSPACE/dendrites" -name "*.md" -print 2>/dev/null | wc -l | tr -d ' ')
 EPISODE_COUNT=$(find "$WORKSPACE/episodes" -name "*.md" -print 2>/dev/null | wc -l | tr -d ' ')
 echo "  ✓ State loaded"
@@ -138,7 +157,7 @@ $RECENT_EPISODES
 
 ## Today's Dendrite Signals
 $DENDRITES
-
+$TODO_CONTEXT
 ## Task
 Produce today's rollup. Start with YAML frontmatter, then markdown sections.
 
@@ -175,7 +194,8 @@ risk_items: <number of items flagged as risky>
    - Any TODO/FIXME in hot files
    - If nothing is risky, say so in one line
 7. **Continuity** — what was done from yesterday's open items, what carries forward
-8. **Recommended Next Steps** — rank by LEVERAGE, not recency. For each:
+8. **TODO Velocity** (if TODO list exists) — how many items were added, completed, deferred, or dropped since last rollup. Flag any active items older than 3 days as stale — recommend: decide, delegate, or drop. Note patterns (are items being repeatedly deferred? Is the backlog growing faster than completion?). If no TODO list exists, skip this section.
+9. **Recommended Next Steps** — rank by LEVERAGE, not recency. For each:
    - What to do (specific, actionable)
    - Why it matters now (what it unblocks or what risk it reduces)
    - Estimated scope (quick win / half-day / multi-day)

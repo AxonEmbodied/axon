@@ -304,6 +304,16 @@ if [[ -f "$PROTOCOL" ]]; then
     PROTOCOL_TEXT=$(cat "$PROTOCOL")
 fi
 
+# Load TODO list if available
+TODO_BRIEFING=""
+if [[ -f "$WORKSPACE/todos.md" ]]; then
+    TODO_BRIEFING="
+## Current TODO List
+$(cat "$WORKSPACE/todos.md")
+
+When briefing, reference the highest-priority active items. If any active items are older than 3 days, call them out — suggest the developer decide, delegate, or drop them."
+fi
+
 # --- Launch interactive session ---
 SESSION_MARKER="$MORNING_DIR/${TODAY}.started"
 
@@ -317,7 +327,7 @@ $LATEST_ROLLUP
 
 ## Gap Context
 $GAP_CONTEXT
-
+$TODO_BRIEFING
 ## Morning Session
 This is a morning briefing session. The developer just sat down. Greet them with a concise briefing based on the state and latest rollup. Then stay in conversation — they may want to discuss priorities, ask questions, or plan today.
 

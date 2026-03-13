@@ -34,6 +34,7 @@ Commands:
   archive   Archive a project (exclude from morning --all)
   pause     Pause a project (exclude from morning --all, cron continues)
   resume    Reactivate a paused/archived project
+  todo      Per-project task list (add, done, defer, drop, list)
   log       Append a quick note to the stream
   status    Show current project state
   sync      Push/pull Axon memory to/from remote
@@ -54,6 +55,9 @@ Examples:
   axon morning --project eat-ai-sar-portal
   axon projects
   axon archive --project old-project
+  axon todo add "Implement CLAUDE.md bridge" --priority high
+  axon todo done 1
+  axon todo list all
   axon log "Spoke with brand team, pilot confirmed for next week"
 EOF
     exit 1
@@ -122,6 +126,7 @@ case "$COMMAND" in
     archive)  exec "$SCRIPT_DIR/axon-projects" archive ;;
     pause)    exec "$SCRIPT_DIR/axon-projects" pause ;;
     resume)   exec "$SCRIPT_DIR/axon-projects" activate ;;
+    todo)     exec "$SCRIPT_DIR/axon-todo" ${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"} ;;
     log)      exec "$SCRIPT_DIR/axon-log" ${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"} ;;
     status)   exec "$SCRIPT_DIR/axon-status" ;;
     sync)     exec "$SCRIPT_DIR/axon-sync" ${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"} ;;

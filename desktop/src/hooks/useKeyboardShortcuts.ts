@@ -51,6 +51,13 @@ export function useKeyboardShortcuts(onTogglePalette: () => void) {
         return
       }
 
+      // Cmd+Shift+T: jump to Tasks
+      if (meta && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault()
+        setView('todos')
+        return
+      }
+
       // Cmd+? (Cmd+Shift+/): toggle shortcuts panel
       if (meta && (e.key === '?' || (e.shiftKey && e.key === '/'))) {
         e.preventDefault()
@@ -58,10 +65,10 @@ export function useKeyboardShortcuts(onTogglePalette: () => void) {
         return
       }
 
-      // Cmd+1-5: switch views
-      if (meta && e.key >= '1' && e.key <= '5') {
+      // Cmd+1-6: switch views
+      if (meta && e.key >= '1' && e.key <= '6') {
         e.preventDefault()
-        const views: ViewId[] = ['morning', 'agents', 'timeline', 'terminal', 'settings']
+        const views: ViewId[] = ['morning', 'agents', 'timeline', 'todos', 'terminal', 'settings']
         const idx = parseInt(e.key) - 1
         if (views[idx]) setView(views[idx])
         return
