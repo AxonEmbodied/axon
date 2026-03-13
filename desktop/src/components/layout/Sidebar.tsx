@@ -140,6 +140,25 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
         </div>
       )}
 
+      {/* Project dots — macOS Spaces-style indicator */}
+      {!collapsed && projects.filter(p => p.status === 'active').length > 1 && (
+        <div className="flex justify-center gap-1.5 px-3 pb-3" aria-label="Project position">
+          {projects.filter(p => p.status === 'active').map((p) => (
+            <button
+              key={p.name}
+              onClick={() => setActiveProject(p.name)}
+              aria-label={`Switch to ${p.name}`}
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-200
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
+                ${activeProject === p.name
+                  ? 'bg-[var(--ax-text-on-dark)] scale-125'
+                  : 'bg-[var(--ax-text-on-dark-muted)] hover:bg-[var(--ax-text-on-dark)] opacity-40 hover:opacity-70'
+                }`}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className={`${collapsed ? 'px-1' : 'px-3'} flex-1 flex flex-col`} aria-label="Main views">
         {!collapsed && (
@@ -194,25 +213,6 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
           )
         })}
       </nav>
-
-      {/* Project dots — macOS Spaces-style indicator */}
-      {!collapsed && projects.filter(p => p.status === 'active').length > 1 && (
-        <div className="flex justify-center gap-1.5 px-3 pb-3" aria-label="Project position">
-          {projects.filter(p => p.status === 'active').map((p) => (
-            <button
-              key={p.name}
-              onClick={() => setActiveProject(p.name)}
-              aria-label={`Switch to ${p.name}`}
-              className={`w-1.5 h-1.5 rounded-full transition-all duration-200
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
-                ${activeProject === p.name
-                  ? 'bg-[var(--ax-text-on-dark)] scale-125'
-                  : 'bg-[var(--ax-text-on-dark-muted)] hover:bg-[var(--ax-text-on-dark)] opacity-40 hover:opacity-70'
-                }`}
-            />
-          ))}
-        </div>
-      )}
 
       {/* Footer */}
       <div className={`${collapsed ? 'px-1' : 'px-3'} pb-5 space-y-1 relative`}>
