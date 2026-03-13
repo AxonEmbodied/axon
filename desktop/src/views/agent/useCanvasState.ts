@@ -2,9 +2,10 @@ import { useReducer, useCallback, useEffect, useRef, useState, useMemo } from 'r
 import {
   tilesReducer, zonesReducer,
   computeZoneLayouts, computeTilePositionMap, computeCompactLayout,
-  ZONE_COLORS, snap, TILE_W, TILE_H, ZONE_MIN_W, ZONE_MIN_H,
+  ZONE_COLORS, snap, TILE_W, TILE_H, TILE_EXPANDED_W, TILE_EXPANDED_H, TILE_MINIMIZED_W, TILE_MINIMIZED_H, ZONE_MIN_W, ZONE_MIN_H,
   type TileState, type ZoneState,
 } from './zoneReducers'
+import { useTerminalStore } from '@/store/terminalStore'
 import type { SessionSummary } from '@/hooks/useSessions'
 
 export interface Viewport { x: number; y: number; scale: number }
@@ -35,10 +36,20 @@ export function useCanvasState(projectName: string | null) {
     fetch(`/api/axon/canvas-layout?project=${encodeURIComponent(projectName)}`)
       .then(r => r.json())
       .then(data => {
-        // Normalize tile dimensions to current constants (handles old 240x160 tiles)
-        const loadedTiles = (data.tiles || []).map((t: TileState) => ({
-          ...t, width: TILE_W, height: TILE_H,
-        }))
+        // Normalize tile dimensions — tiles with terminals keep full size (CSS scale handles minimize)
+        const expandedSet = useTerminalStore.getState().canvasExpanded
+        const loadedTiles = (data.tiles || []).map((t: TileState) => {
+          const state = expandedSet[t.sessionId]
+          if (state) {
+            // Has terminal — keep at full expanded size (migration: old minimized tiles may be smaller)
+            return {
+              ...t,
+              width: t.width < TILE_EXPANDED_W ? TILE_EXPANDED_W : t.width,
+              height: t.height < TILE_EXPANDED_H ? TILE_EXPANDED_H : t.height,
+            }
+          }
+          return { ...t, width: TILE_W, height: TILE_H }
+        })
         dispatchTiles({ type: 'SET_ALL', tiles: loadedTiles })
         dispatchZones({ type: 'SET_ALL', zones: data.zones || [] })
         if (data.viewport) setViewport(data.viewport)

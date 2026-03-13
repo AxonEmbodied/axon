@@ -2,10 +2,24 @@ import { create } from 'zustand'
 
 export type ViewId = 'timeline' | 'state' | 'decisions' | 'settings' | 'rollup-detail' | 'morning' | 'onboarding' | 'terminal' | 'agents'
 
+// Sidebar order — used to determine swipe direction
+const VIEW_ORDER: Record<ViewId, number> = {
+  'morning': 0, 'agents': 1, 'timeline': 2,
+  'terminal': 3, 'settings': 4,
+  'state': 5, 'decisions': 6, 'rollup-detail': 7, 'onboarding': 8,
+}
+
+function getSwipeDir(from: ViewId, to: ViewId): 'left' | 'right' | 'none' {
+  const a = VIEW_ORDER[from], b = VIEW_ORDER[to]
+  return b > a ? 'left' : b < a ? 'right' : 'none'
+}
+
 interface UIStore {
   sidebarOpen: boolean
   theme: 'light' | 'dark'
   activeView: ViewId
+  previousView: ViewId | null
+  viewSwipeDirection: 'left' | 'right' | 'none'
   selectedRollup: string | null
   resumeSessionId: string | null
   toggleSidebar: () => void
@@ -28,6 +42,8 @@ export const useUIStore = create<UIStore>((set) => ({
   sidebarOpen: true,
   theme: getInitialTheme(),
   activeView: 'timeline',
+  previousView: null,
+  viewSwipeDirection: 'none',
   selectedRollup: null,
   resumeSessionId: null,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -40,9 +56,29 @@ export const useUIStore = create<UIStore>((set) => ({
     localStorage.setItem('ax-theme', next)
     return { theme: next }
   }),
-  setView: (view) => set({ activeView: view, selectedRollup: null }),
-  openRollup: (filename) => set({ activeView: 'rollup-detail', selectedRollup: filename }),
-  goBack: () => set({ activeView: 'timeline', selectedRollup: null }),
-  openTerminal: (sessionId) => set({ activeView: 'terminal', resumeSessionId: sessionId }),
+  setView: (view) => set(s => ({
+    activeView: view,
+    previousView: s.activeView,
+    viewSwipeDirection: getSwipeDir(s.activeView, view),
+    selectedRollup: null,
+  })),
+  openRollup: (filename) => set(s => ({
+    activeView: 'rollup-detail',
+    previousView: s.activeView,
+    viewSwipeDirection: getSwipeDir(s.activeView, 'rollup-detail'),
+    selectedRollup: filename,
+  })),
+  goBack: () => set(s => ({
+    activeView: 'timeline',
+    previousView: s.activeView,
+    viewSwipeDirection: getSwipeDir(s.activeView, 'timeline'),
+    selectedRollup: null,
+  })),
+  openTerminal: (sessionId) => set(s => ({
+    activeView: 'terminal',
+    previousView: s.activeView,
+    viewSwipeDirection: getSwipeDir(s.activeView, 'terminal'),
+    resumeSessionId: sessionId,
+  })),
   clearResumeSession: () => set({ resumeSessionId: null }),
 }))

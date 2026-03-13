@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useCallback } from 'react'
+import { type ReactNode, useState, useCallback, useEffect, useRef } from 'react'
 import { Sidebar } from './Sidebar'
 import { NeuralBackground } from '@/components/shared/NeuralBackground'
 import { CommandPalette } from '@/components/shared/CommandPalette'
@@ -6,7 +6,6 @@ import { useThemeSync } from '@/hooks/useThemeSync'
 import { useDataRefresh } from '@/hooks/useDataRefresh'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useProjectStore } from '@/store/projectStore'
-import { useUIStore } from '@/store/uiStore'
 import { DebugMenu } from '@/components/shared/DebugMenu'
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -17,23 +16,33 @@ export function Shell({ children }: { children: ReactNode }) {
   const togglePalette = useCallback(() => setPaletteOpen(o => !o), [])
   useKeyboardShortcuts(togglePalette)
 
-  const swipeDirection = useProjectStore((s) => s.swipeDirection)
-  const activeView = useUIStore((s) => s.activeView)
-  const isFullBleed = activeView === 'terminal' || activeView === 'agents'
+  const activeProject = useProjectStore(s => s.activeProject)
+  const swipeDirection = useProjectStore(s => s.swipeDirection)
+  const [animClass, setAnimClass] = useState('')
+  const prevProjectRef = useRef(activeProject)
 
-  // Determine animation class based on swipe direction
-  const swipeClass = swipeDirection === 'right' ? 'animate-slide-right'
-    : swipeDirection === 'left' ? 'animate-slide-left'
-    : 'animate-fade-in'
+  useEffect(() => {
+    if (activeProject !== prevProjectRef.current && swipeDirection) {
+      // Enter animation: slide in from the direction we're going
+      setAnimClass(
+        swipeDirection === 'down' ? 'animate-slide-up-in' :
+        swipeDirection === 'up' ? 'animate-slide-down-in' : ''
+      )
+      const t = setTimeout(() => setAnimClass(''), 320)
+      prevProjectRef.current = activeProject
+      return () => clearTimeout(t)
+    }
+    prevProjectRef.current = activeProject
+  }, [activeProject, swipeDirection])
 
   return (
     <div className="flex h-screen overflow-hidden">
       <a href="#main-content" className="skip-to-content">Skip to content</a>
       <Sidebar onOpenPalette={togglePalette} />
-      <main className="flex-1 overflow-y-auto bg-ax-base relative" role="main" aria-label="Main content" id="main-content">
+      <main className="flex-1 bg-ax-base relative h-full overflow-hidden" role="main" aria-label="Main content" id="main-content">
         <NeuralBackground />
         <DebugMenu />
-        <div className={`relative ${isFullBleed ? 'h-full' : 'max-w-3xl mx-auto px-8 py-10'} ${swipeClass}`} key={useProjectStore.getState().activeProject || 'none'}>
+        <div className={`relative h-full ${animClass}`} key={activeProject || 'none'}>
           {children}
         </div>
       </main>

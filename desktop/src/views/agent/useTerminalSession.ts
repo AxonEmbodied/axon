@@ -1,116 +1,81 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useTerminalStore, type TerminalStatus } from '@/store/terminalStore'
 
-export type TerminalStatus = 'idle' | 'spawning' | 'connecting' | 'connected' | 'exited' | 'error'
+export type { TerminalStatus }
 
+/**
+ * Hook that wraps the global terminal store for use in a single component.
+ * attach/detach handles the data listener lifecycle.
+ * On unmount: detaches listener but does NOT kill the PTY (persistence!).
+ * Call `kill()` explicitly to destroy the terminal.
+ */
 export function useTerminalSession() {
   const [terminalId, setTerminalId] = useState<string | null>(null)
-  const [status, setStatus] = useState<TerminalStatus>('idle')
-  const [exitCode, setExitCode] = useState<number | null>(null)
-  const wsRef = useRef<WebSocket | null>(null)
-  const dataHandlerRef = useRef<((data: string) => void) | null>(null)
   const terminalIdRef = useRef<string | null>(null)
+  const dataHandlerRef = useRef<((data: string) => void) | null>(null)
+  const listenerRef = useRef<((data: string) => void) | null>(null)
+
+  const store = useTerminalStore
+
+  // Derive status from global store
+  const entry = useTerminalStore(s => terminalId ? s.terminals[terminalId] : undefined)
+  const status: TerminalStatus | 'idle' = entry?.status ?? 'idle'
+  const exitCode = entry?.exitCode ?? null
 
   const onData = useCallback((handler: (data: string) => void) => {
     dataHandlerRef.current = handler
-  }, [])
+    // If already attached, update the listener
+    if (terminalIdRef.current && listenerRef.current) {
+      store.getState().detach(terminalIdRef.current, listenerRef.current)
+    }
+    const listener = (data: string) => handler(data)
+    listenerRef.current = listener
+    if (terminalIdRef.current) {
+      store.getState().attach(terminalIdRef.current, listener)
+    }
+  }, [store])
 
   const spawn = useCallback(async (project: string, sessionId?: string) => {
-    setStatus('spawning')
-    setExitCode(null)
-
-    try {
-      const res = await fetch('/api/axon/terminal/spawn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project, sessionId: sessionId || null }),
-      })
-
-      if (!res.ok) throw new Error(`Spawn failed: ${res.status}`)
-      const { terminalId: id } = await res.json()
-      setTerminalId(id)
-      terminalIdRef.current = id
-      setStatus('connecting')
-
-      // Connect WebSocket
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ws = new WebSocket(`${protocol}//${location.host}/api/axon/terminal/ws?id=${id}`)
-
-      ws.onopen = () => {
-        setStatus('connected')
-      }
-
-      ws.onmessage = (event) => {
-        const data = event.data as string
-        // Check for JSON control messages (exit)
-        if (data.startsWith('{')) {
-          try {
-            const msg = JSON.parse(data)
-            if (msg.type === 'exit') {
-              setExitCode(msg.exitCode)
-              setStatus('exited')
-              return
-            }
-          } catch {
-            // Not JSON — treat as terminal output
-          }
-        }
-        dataHandlerRef.current?.(data)
-      }
-
-      ws.onerror = () => {
-        setStatus('error')
-      }
-
-      ws.onclose = (event) => {
-        // Only set error if we didn't already handle exit
-        setStatus(prev => prev === 'exited' ? prev : 'error')
-        wsRef.current = null
-        // Code 1000 = normal close (process exited), don't log
-        if (event.code !== 1000) {
-          console.log(`[Terminal WS] Closed: code=${event.code} reason=${event.reason}`)
-        }
-      }
-
-      wsRef.current = ws
-    } catch (e) {
-      console.error('Terminal spawn error:', e)
-      setStatus('error')
+    const id = await store.getState().spawn(project, sessionId)
+    setTerminalId(id)
+    terminalIdRef.current = id
+    // Attach listener if one was registered
+    if (listenerRef.current) {
+      store.getState().attach(id, listenerRef.current)
     }
-  }, [])
+    return id
+  }, [store])
 
   const sendInput = useCallback((data: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data)
-    }
-  }, [])
+    const id = terminalIdRef.current
+    if (id) store.getState().sendInput(id, data)
+  }, [store])
 
   const sendResize = useCallback((cols: number, rows: number) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
-    }
-  }, [])
+    const id = terminalIdRef.current
+    if (id) store.getState().sendResize(id, cols, rows)
+  }, [store])
 
-  const disconnect = useCallback(() => {
-    wsRef.current?.close()
-    wsRef.current = null
+  const kill = useCallback(() => {
     const id = terminalIdRef.current
     if (id) {
-      fetch(`/api/axon/terminal/${id}`, { method: 'DELETE' }).catch(() => {})
+      store.getState().kill(id)
+      terminalIdRef.current = null
+      setTerminalId(null)
     }
-    terminalIdRef.current = null
-    setTerminalId(null)
-    setStatus('idle')
-    setExitCode(null)
-  }, [])
+  }, [store])
 
-  // Cleanup on unmount
+  // Legacy disconnect = kill (for backward compat with TerminalView)
+  const disconnect = kill
+
+  // On unmount: detach listener only, do NOT kill
   useEffect(() => () => {
-    wsRef.current?.close()
     const id = terminalIdRef.current
-    if (id) {
-      fetch(`/api/axon/terminal/${id}`, { method: 'DELETE' }).catch(() => {})
+    const listener = listenerRef.current
+    if (id && listener) {
+      store.getState().detach(id, listener)
     }
-  }, [])
+  }, [store])
 
-  return { terminalId, status, exitCode, spawn, sendInput, sendResize, disconnect, onData }
+  return { terminalId, status, exitCode, spawn, sendInput, sendResize, disconnect, kill, onData }
 }

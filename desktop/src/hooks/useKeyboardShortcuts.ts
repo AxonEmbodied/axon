@@ -1,15 +1,15 @@
 import { useEffect } from 'react'
-import { useProjectStore } from '@/store/projectStore'
 import { useUIStore, type ViewId } from '@/store/uiStore'
+
+const CAROUSEL: ViewId[] = ['morning', 'agents', 'timeline']
 
 /**
  * Global keyboard shortcuts:
- * - Cmd+Left/Right: switch between projects (Spaces-like)
+ * - Cmd+Left/Right: slide between carousel desktops
  * - Cmd+K: toggle command palette
- * - Cmd+1-4: switch views
+ * - Cmd+1-5: switch views
  */
 export function useKeyboardShortcuts(onTogglePalette: () => void) {
-  const switchProject = useProjectStore((s) => s.switchProject)
   const setView = useUIStore((s) => s.setView)
 
   useEffect(() => {
@@ -23,15 +23,14 @@ export function useKeyboardShortcuts(onTogglePalette: () => void) {
         return
       }
 
-      // Cmd+Left/Right: switch projects
-      if (meta && e.key === 'ArrowLeft') {
+      // Cmd+Left/Right: slide carousel desktops
+      if (meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault()
-        switchProject('left')
-        return
-      }
-      if (meta && e.key === 'ArrowRight') {
-        e.preventDefault()
-        switchProject('right')
+        const active = useUIStore.getState().activeView
+        const idx = CAROUSEL.indexOf(active)
+        if (idx < 0) return // not on a carousel view
+        const next = e.key === 'ArrowLeft' ? idx - 1 : idx + 1
+        if (next >= 0 && next < CAROUSEL.length) setView(CAROUSEL[next])
         return
       }
 
@@ -47,5 +46,5 @@ export function useKeyboardShortcuts(onTogglePalette: () => void) {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [switchProject, setView, onTogglePalette])
+  }, [setView, onTogglePalette])
 }

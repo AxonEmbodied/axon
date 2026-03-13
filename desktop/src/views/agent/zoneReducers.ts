@@ -6,6 +6,10 @@
 export const GRID = 20
 export const TILE_W = 200
 export const TILE_H = 72
+export const TILE_EXPANDED_W = 600
+export const TILE_EXPANDED_H = 420
+export const TILE_MINIMIZED_W = 320
+export const TILE_MINIMIZED_H = 200
 export const ZONE_PAD = 16
 export const ZONE_GAP = 10
 export const ZONE_HEADER_H = 32
@@ -48,6 +52,7 @@ export type TileAction =
   | { type: 'REMOVE'; sessionId: string }
   | { type: 'ASSIGN_ZONE'; sessionId: string; zoneId: string | null }
   | { type: 'REORDER'; updates: { sessionId: string; order: number }[] }
+  | { type: 'RESIZE'; sessionId: string; width: number; height: number }
 
 export type ZoneAction =
   | { type: 'SET_ALL'; zones: ZoneState[] }
@@ -133,6 +138,10 @@ export function tilesReducer(state: TileState[], action: TileAction): TileState[
       const updateMap = new Map(action.updates.map(u => [u.sessionId, u.order]))
       return state.map(t => updateMap.has(t.sessionId) ? { ...t, order: updateMap.get(t.sessionId) } : t)
     }
+    case 'RESIZE':
+      return state.map(t => t.sessionId === action.sessionId
+        ? { ...t, width: action.width, height: action.height }
+        : t)
     default:
       return state
   }

@@ -356,8 +356,13 @@ export function ZoneTree({
                 return (
                   <div
                     key={s.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('axon/available-session', s.id)
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
                     className="flex items-center gap-1 h-[24px] px-2 group
-                      hover:bg-[var(--ax-text-primary)]/[0.06] transition-colors cursor-pointer"
+                      hover:bg-[var(--ax-text-primary)]/[0.06] transition-colors cursor-grab"
                     style={{ paddingLeft: '12px' }}
                     onClick={() => handleAddToCanvas(s.id)}
                   >

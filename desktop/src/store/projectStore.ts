@@ -6,7 +6,7 @@ interface ProjectStore {
   activeProject: string | null
   loading: boolean
   error: string | null
-  swipeDirection: 'left' | 'right' | null
+  swipeDirection: 'left' | 'right' | 'up' | 'down' | null
   setProjects: (projects: Project[]) => void
   setActiveProject: (name: string) => void
   setLoading: (loading: boolean) => void
@@ -21,7 +21,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   error: null,
   swipeDirection: null,
   setProjects: (projects) => set({ projects, loading: false, error: null }),
-  setActiveProject: (name) => set({ activeProject: name, swipeDirection: null }),
+  setActiveProject: (name) => {
+    const { projects, activeProject } = get()
+    if (name === activeProject) return
+    const activeProjects = projects.filter(p => p.status === 'active')
+    const oldIdx = activeProjects.findIndex(p => p.name === activeProject)
+    const newIdx = activeProjects.findIndex(p => p.name === name)
+    const dir = oldIdx === -1 || newIdx === -1 ? null
+      : newIdx > oldIdx ? 'down' : 'up'
+    set({ activeProject: name, swipeDirection: dir as any })
+    setTimeout(() => set({ swipeDirection: null }), 350)
+  },
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error, loading: false }),
   switchProject: (direction) => {

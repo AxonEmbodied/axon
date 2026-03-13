@@ -60,7 +60,7 @@ export function TerminalView({
   const fitAddonRef = useRef<FitAddon | null>(null)
   const spawnedRef = useRef(false)
 
-  const { terminalId, status, exitCode, spawn, sendInput, sendResize, disconnect, onData } =
+  const { terminalId, status, exitCode, spawn, sendInput, sendResize, kill, onData } =
     useTerminalSession()
 
   // Register data handler: PTY output → xterm.write
@@ -174,13 +174,13 @@ export function TerminalView({
   }, [project, resumeSessionId, status, spawn, onClearResume])
 
   const handleRestart = useCallback(() => {
-    disconnect()
+    kill()
     spawnedRef.current = false
     setTimeout(() => {
       spawnedRef.current = true
       spawn(project)
     }, 100)
-  }, [disconnect, spawn, project])
+  }, [kill, spawn, project])
 
   return (
     <div className="flex-1 flex flex-col min-h-0">

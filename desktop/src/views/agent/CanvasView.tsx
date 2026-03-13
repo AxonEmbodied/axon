@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
-import { Maximize2, Star, RefreshCw, Check, X, Pencil } from 'lucide-react'
+import { Maximize2, Star, RefreshCw, Check, X, Pencil, Minus, Plus } from 'lucide-react'
+import { CanvasTerminal } from './CanvasTerminal'
+import { useTerminalStore } from '@/store/terminalStore'
 import {
-  GRID, TILE_W, TILE_H,
+  GRID, TILE_W, TILE_H, TILE_EXPANDED_W, TILE_EXPANDED_H, TILE_MINIMIZED_W, TILE_MINIMIZED_H,
   snap, getZoneDepth, getDescendantZoneIds,
   computeZoneLayouts,
   type TileState, type ZoneState, type TileAction, type ZoneAction, type ZoneLayout,
@@ -14,6 +16,7 @@ import type { SessionSummary } from '@/hooks/useSessions'
 const MIN_SCALE = 0.08
 const MAX_SCALE = 3
 const DRAG_THRESHOLD = 4
+const MINIMIZE_SCALE = 0.5
 
 const HEAT_COLORS: Record<string, string> = {
   read: '#6B8FAD', write: '#7B9E7B', edit: '#C8956C',
@@ -74,6 +77,9 @@ interface CanvasViewProps {
   onOpenSession?: (sessionId: string) => void
   onRemoveTile?: (sessionId: string) => void
   onSessionRenamed?: () => void
+  onAddTile?: (sessionId: string, x: number, y: number) => void
+  onAssignTileZone?: (sessionId: string, zoneId: string | null) => void
+  activeProject?: string | null
 }
 
 /* ── Component ─────────────────────────────────────────────────── */
@@ -84,6 +90,7 @@ export function CanvasView({
   dispatchTiles, dispatchZones, setViewport,
   scheduleSave, immediateSave,
   reorgActive, onReorganize, onReorgApply, onReorgCancel, onOpenSession, onRemoveTile, onSessionRenamed,
+  onAddTile, onAssignTileZone, activeProject,
 }: CanvasViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
@@ -95,7 +102,11 @@ export function CanvasView({
   const [droppedTileId, setDroppedTileId] = useState<string | null>(null)
   const [flashZoneId, setFlashZoneId] = useState<string | null>(null)
   const [editingTileId, setEditingTileId] = useState<string | null>(null)
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  // Canvas terminal state from global store (survives view switches)
+  const canvasTerminals = useTerminalStore(s => s.canvasTerminals)
+  const canvasExpanded = useTerminalStore(s => s.canvasExpanded)
 
   // Keep ref synced
   viewportRef.current = viewport
@@ -129,6 +140,15 @@ export function CanvasView({
       onSessionRenamed?.()
     } catch { /* silent */ }
   }, [sessionMap, onSessionRenamed])
+
+  const commitZoneRename = useCallback((zoneId: string, value: string) => {
+    setEditingZoneId(null)
+    const trimmed = value.trim()
+    if (!trimmed) return
+    const zone = zones.find(z => z.id === zoneId)
+    if (!zone || trimmed === zone.label) return
+    dispatchZones({ type: 'RENAME', id: zoneId, label: trimmed })
+  }, [zones, dispatchZones])
 
   /* ── Apply viewport transform to DOM ──────────────────────────── */
 
@@ -274,7 +294,7 @@ export function CanvasView({
   /* ── Drag state ───────────────────────────────────────────────── */
 
   const dragRef = useRef<{
-    type: 'pan' | 'tile' | 'zone'
+    type: 'pan' | 'tile' | 'zone' | 'resize'
     startMouseX: number
     startMouseY: number
     startVpX: number
@@ -282,6 +302,8 @@ export function CanvasView({
     targetId?: string
     startX: number
     startY: number
+    startWidth?: number
+    startHeight?: number
     hasMoved: boolean
   } | null>(null)
 
@@ -329,6 +351,26 @@ export function CanvasView({
       }
       e.preventDefault()
       return
+    }
+
+    // Check for resize handle (before tile drag)
+    const resizeHandle = (e.target as HTMLElement).closest('[data-resize-handle]') as HTMLElement | null
+    if (resizeHandle) {
+      const sessionId = resizeHandle.getAttribute('data-resize-handle')!
+      const tile = tiles.find(t => t.sessionId === sessionId)
+      if (tile) {
+        dragRef.current = {
+          type: 'resize',
+          startMouseX: e.clientX, startMouseY: e.clientY,
+          startVpX: v.x, startVpY: v.y,
+          targetId: sessionId,
+          startX: 0, startY: 0,
+          startWidth: tile.width, startHeight: tile.height,
+          hasMoved: false,
+        }
+        e.preventDefault()
+        return
+      }
     }
 
     // Check for tile drag
@@ -425,6 +467,12 @@ export function CanvasView({
             dispatchTiles({ type: 'MOVE', sessionId: tile.sessionId, x: tile.x + zoneDx, y: tile.y + zoneDy })
           }
         }
+      } else if (d.type === 'resize' && d.targetId) {
+        const dxW = (e.clientX - d.startMouseX) / v.scale
+        const dyH = (e.clientY - d.startMouseY) / v.scale
+        const newW = Math.max(TILE_MINIMIZED_W, snap((d.startWidth || TILE_EXPANDED_W) + dxW))
+        const newH = Math.max(TILE_MINIMIZED_H, snap((d.startHeight || TILE_EXPANDED_H) + dyH))
+        dispatchTiles({ type: 'RESIZE', sessionId: d.targetId, width: newW, height: newH })
       }
     }
 
@@ -436,14 +484,36 @@ export function CanvasView({
       setHoverZoneId(null)
 
       if (!d.hasMoved) {
-        // Click (no drag) on tile — open session
-        if (d.type === 'tile' && d.targetId && onOpenSession) {
-          onOpenSession(d.targetId)
+        // Click (no drag) on tile — 3-state: normal → expanded, minimized → expanded, expanded → no-op
+        if (d.type === 'tile' && d.targetId) {
+          const sid = d.targetId
+          const store = useTerminalStore.getState()
+          const termId = store.canvasTerminals[sid]
+          const expandState = store.canvasExpanded[sid]
+
+          if (termId && expandState === 'expanded') {
+            // Already expanded — no-op
+          } else if (termId && expandState === 'minimized') {
+            // Minimized — re-expand (no re-spawn, tile is already full size, just remove CSS scale)
+            store.setTileExpanded(sid, true)
+          } else if (activeProject) {
+            // Normal — spawn terminal and expand
+            dispatchTiles({ type: 'RESIZE', sessionId: sid, width: TILE_EXPANDED_W, height: TILE_EXPANDED_H })
+            store.spawn(activeProject, sid.startsWith('new-') ? undefined : sid).then(tid => {
+              useTerminalStore.getState().expandCanvasTile(sid, tid)
+            })
+          } else if (onOpenSession) {
+            onOpenSession(sid)
+          }
         }
         return
       }
 
       if (d.hasMoved) {
+        if (d.type === 'resize') {
+          immediateSave()
+          return
+        }
         if (d.type === 'tile' && d.targetId) {
           const v = viewportRef.current
           const worldDx = (e.clientX - d.startMouseX) / v.scale
@@ -501,6 +571,41 @@ export function CanvasView({
     prevReorgRef.current = reorgActive
   }, [reorgActive, fitAll])
 
+  /* ── HTML5 Drop from Available sidebar ──────────────────────── */
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('axon/available-session')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    const sessionId = e.dataTransfer.getData('axon/available-session')
+    if (!sessionId || !onAddTile) return
+    e.preventDefault()
+
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const v = viewportRef.current
+    const worldX = snap((e.clientX - rect.left - v.x) / v.scale)
+    const worldY = snap((e.clientY - rect.top - v.y) / v.scale)
+
+    onAddTile(sessionId, worldX, worldY)
+
+    // Auto-assign to zone if dropped over one
+    const tileCx = worldX + TILE_W / 2
+    const tileCy = worldY + TILE_H / 2
+    const hitZone = findZoneAtWorldPoint(tileCx, tileCy)
+    if (hitZone && onAssignTileZone) {
+      onAssignTileZone(sessionId, hitZone)
+      setFlashZoneId(hitZone)
+    }
+
+    setDroppedTileId(sessionId)
+  }, [onAddTile, onAssignTileZone, findZoneAtWorldPoint])
+
   /* ── Render ───────────────────────────────────────────────────── */
 
   return (
@@ -509,6 +614,8 @@ export function CanvasView({
       className="flex-1 min-h-0 relative overflow-hidden"
       style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
       onMouseDown={handleMouseDown}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       {/* World container — CSS transformed */}
       <div
@@ -542,7 +649,7 @@ export function CanvasView({
                 '--zone-color': zone.color,
               } as React.CSSProperties}
             >
-              {/* Zone header — drag handle */}
+              {/* Zone header — drag handle + double-click to rename */}
               <div
                 data-zone-header={zone.id}
                 className="h-10 flex items-center px-3 gap-2 cursor-grab select-none
@@ -554,9 +661,32 @@ export function CanvasView({
                     ${isHovered ? 'shadow-[0_0_10px_3px_var(--zone-color)]' : ''}`}
                   style={{ backgroundColor: zone.color }}
                 />
-                <span className="font-mono text-[10px] uppercase tracking-wider text-ax-text-secondary truncate">
-                  {zone.label}
-                </span>
+                {editingZoneId === zone.id ? (
+                  <input
+                    autoFocus
+                    className="font-mono text-[10px] uppercase tracking-wider text-ax-text-primary bg-transparent
+                      border-b border-ax-brand outline-none px-0 py-0 flex-1 min-w-0"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => commitZoneRename(zone.id, editValue)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitZoneRename(zone.id, editValue)
+                      if (e.key === 'Escape') setEditingZoneId(null)
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span
+                    className="font-mono text-[10px] uppercase tracking-wider text-ax-text-secondary truncate"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      setEditingZoneId(zone.id)
+                      setEditValue(zone.label)
+                    }}
+                  >
+                    {zone.label}
+                  </span>
+                )}
                 {tileCount > 0 && (
                   <span className="font-mono text-[9px] text-ax-text-ghost ml-auto shrink-0
                     bg-[var(--zone-color)]/[0.1] px-1.5 py-0.5 rounded-full">
@@ -576,7 +706,10 @@ export function CanvasView({
           const zone = tile.zoneId ? zones.find(z => z.id === tile.zoneId) : null
           const isDropped = droppedTileId === tile.sessionId
 
-          if (scaleClass === 'dot') {
+          // Check if tile has a live terminal — always use full render path to avoid unmounting
+          const hasTerminal = !!canvasTerminals[tile.sessionId]
+
+          if (scaleClass === 'dot' && !hasTerminal) {
             return (
               <div
                 key={tile.sessionId}
@@ -594,7 +727,7 @@ export function CanvasView({
             )
           }
 
-          if (scaleClass === 'thumb') {
+          if (scaleClass === 'thumb' && !hasTerminal) {
             return (
               <div
                 key={tile.sessionId}
@@ -618,7 +751,12 @@ export function CanvasView({
             )
           }
 
-          // Full mode — detailed card
+          // Full mode (or terminal tile at any zoom) — card, expanded terminal, or minimized
+          const termId = canvasTerminals[tile.sessionId]
+          const expandState = canvasExpanded[tile.sessionId]
+          const isExpanded = expandState === 'expanded' && !!termId
+          const isMinimized = expandState === 'minimized' && !!termId
+
           return (
             <div
               key={tile.sessionId}
@@ -626,10 +764,15 @@ export function CanvasView({
               className={`absolute bg-ax-elevated rounded-lg border border-ax-border
                 cursor-grab overflow-hidden flex flex-col canvas-tile group
                 ${isDropped ? 'canvas-tile-dropped' : ''}
-                ${reorgActive ? 'canvas-reorg-transition' : ''}`}
+                ${isMinimized ? 'canvas-tile-live' : ''}
+                ${reorgActive ? 'canvas-reorg-transition' : ''}
+                transition-transform duration-300 ease-out`}
               style={{
                 left: pos.x, top: pos.y, width: tile.width, height: tile.height,
                 borderColor: zone ? `color-mix(in srgb, ${zone.color} 20%, var(--ax-border))` : undefined,
+                zIndex: isExpanded ? 10 : isMinimized ? 5 : undefined,
+                transform: isMinimized ? `scale(${MINIMIZE_SCALE})` : 'scale(1)',
+                transformOrigin: 'top left',
               }}
             >
               {/* Zone accent line */}
@@ -637,82 +780,164 @@ export function CanvasView({
                 <div className="h-[2px] w-full shrink-0" style={{ backgroundColor: zone.color }} />
               )}
 
-              {/* Hover actions: rename + remove */}
-              <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <button
-                  onClick={() => {
-                    setEditingTileId(tile.sessionId)
-                    setEditValue(session?.nickname || session?.first_prompt || '')
-                  }}
-                  className="p-0.5 rounded text-ax-text-ghost hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors"
-                  title="Rename"
-                >
-                  <Pencil size={10} />
-                </button>
-                {onRemoveTile && (
-                  <button
-                    onClick={() => onRemoveTile(tile.sessionId)}
-                    className="p-0.5 rounded text-ax-text-ghost hover:text-ax-error hover:bg-ax-sunken transition-colors"
-                    title="Remove from canvas"
-                  >
-                    <X size={10} />
-                  </button>
-                )}
-              </div>
-
-              {/* Title */}
-              <div className="px-3 pt-2 pb-1 min-w-0">
-                {editingTileId === tile.sessionId ? (
-                  <input
-                    autoFocus
-                    className="w-full font-serif italic text-[13px] text-ax-text-primary bg-transparent
-                      border-b border-ax-brand outline-none px-0 py-0"
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={() => commitRename(tile.sessionId, editValue)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitRename(tile.sessionId, editValue)
-                      if (e.key === 'Escape') setEditingTileId(null)
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    {session?.pinned && (
-                      <Star size={10} className="text-ax-warning fill-current shrink-0" />
+              {(isExpanded || isMinimized) && termId ? (
+                <>
+                  {/* Terminal title bar — drag handle */}
+                  <div className="shrink-0 h-7 flex items-center px-2 gap-2 bg-ax-sunken/50 border-b border-ax-border-subtle relative z-10">
+                    {isMinimized && (
+                      <div className="w-2 h-2 rounded-full bg-ax-success animate-pulse shrink-0" />
                     )}
-                    <span className="font-serif italic text-[13px] text-ax-text-primary truncate">
-                      {session?.nickname || session?.first_prompt || 'Untitled'}
+                    <span className="font-mono text-[10px] text-ax-text-secondary truncate flex-1">
+                      {session?.nickname || session?.first_prompt || 'Terminal'}
                     </span>
+                    {/* Minimize */}
+                    {isExpanded && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          useTerminalStore.getState().minimizeCanvasTile(tile.sessionId)
+                          immediateSave()
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="p-1 rounded text-ax-text-ghost hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors"
+                        title="Minimize terminal"
+                      >
+                        <Minus size={12} />
+                      </button>
+                    )}
+                    {/* Kill */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        useTerminalStore.getState().killCanvasTerminal(tile.sessionId)
+                        dispatchTiles({ type: 'RESIZE', sessionId: tile.sessionId, width: TILE_W, height: TILE_H })
+                        immediateSave()
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="p-1 rounded text-ax-text-ghost hover:text-ax-error hover:bg-ax-sunken transition-colors"
+                      title="Kill terminal"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
-                )}
-                {!editingTileId && session?.heuristic_summary && (
-                  <p className="text-[10px] text-ax-text-tertiary mt-0.5 line-clamp-2">
-                    {session.heuristic_summary}
-                  </p>
-                )}
-              </div>
+                  {/* Terminal body */}
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <CanvasTerminal terminalId={termId} width={tile.width} height={tile.height - 30} />
+                  </div>
+                  {/* Resize handle — no stopPropagation, bubbles to handleMouseDown which detects [data-resize-handle] */}
+                  <div
+                    data-resize-handle={tile.sessionId}
+                    className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20 opacity-0 group-hover:opacity-60 transition-opacity"
+                    style={{ background: 'linear-gradient(135deg, transparent 50%, var(--ax-text-ghost) 50%)' }}
+                  />
+                </>
+              ) : (
+                <>
+                  {/* Hover actions: rename + remove */}
+                  <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingTileId(tile.sessionId)
+                        setEditValue(session?.nickname || session?.first_prompt || '')
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="p-1 rounded text-ax-text-ghost hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors"
+                      title="Rename"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    {onRemoveTile && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRemoveTile(tile.sessionId) }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="p-1 rounded text-ax-text-ghost hover:text-ax-error hover:bg-ax-sunken transition-colors"
+                        title="Remove from canvas"
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
 
-              {/* Heat strip */}
-              <div className="px-3 pb-1 mt-auto">
-                <MiniHeatStrip json={session?.heatstrip_json || null} />
-              </div>
+                  {/* Title */}
+                  <div className="px-3 pt-2 pb-1 min-w-0">
+                    {editingTileId === tile.sessionId ? (
+                      <input
+                        autoFocus
+                        className="w-full font-serif italic text-[13px] text-ax-text-primary bg-transparent
+                          border-b border-ax-brand outline-none px-0 py-0"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => commitRename(tile.sessionId, editValue)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRename(tile.sessionId, editValue)
+                          if (e.key === 'Escape') setEditingTileId(null)
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        {session?.pinned && (
+                          <Star size={10} className="text-ax-warning fill-current shrink-0" />
+                        )}
+                        <span className="font-serif italic text-[13px] text-ax-text-primary truncate">
+                          {session?.nickname || session?.first_prompt || 'Untitled'}
+                        </span>
+                      </div>
+                    )}
+                    {!editingTileId && session?.heuristic_summary && (
+                      <p className="text-[10px] text-ax-text-tertiary mt-0.5 line-clamp-2">
+                        {session.heuristic_summary}
+                      </p>
+                    )}
+                  </div>
 
-              {/* Footer stats */}
-              <div className="px-3 pb-2 flex items-center gap-2 text-[9px] font-mono text-ax-text-ghost">
-                {session?.modified_at && <span>{timeAgo(session.modified_at)}</span>}
-                {session && session.message_count > 0 && <span>{session.message_count} msgs</span>}
-                {session && session.tool_call_count > 0 && <span>{session.tool_call_count} tools</span>}
-              </div>
+                  {/* Heat strip */}
+                  <div className="px-3 pb-1 mt-auto">
+                    <MiniHeatStrip json={session?.heatstrip_json || null} />
+                  </div>
+
+                  {/* Footer stats */}
+                  <div className="px-3 pb-2 flex items-center gap-2 text-[9px] font-mono text-ax-text-ghost">
+                    {session?.modified_at && <span>{timeAgo(session.modified_at)}</span>}
+                    {session && session.message_count > 0 && <span>{session.message_count} msgs</span>}
+                    {session && session.tool_call_count > 0 && <span>{session.tool_call_count} tools</span>}
+                  </div>
+                </>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* HUD — bottom-right: Reorganize, Fit, Zoom */}
+      {/* HUD — bottom-right: New Session, Reorganize, Fit, Zoom */}
       <div className="absolute bottom-3 right-3 flex items-center gap-1">
+        {activeProject && !reorgActive && (
+          <button
+            onClick={() => {
+              const container = containerRef.current
+              if (!container || !activeProject) return
+              const { width, height } = container.getBoundingClientRect()
+              const v = viewportRef.current
+              const wx = snap((width / 2 - v.x) / v.scale - TILE_EXPANDED_W / 2)
+              const wy = snap((height / 2 - v.y) / v.scale - TILE_EXPANDED_H / 2)
+              const newId = `new-${Date.now()}`
+              dispatchTiles({ type: 'ADD', sessionId: newId, x: wx, y: wy })
+              dispatchTiles({ type: 'RESIZE', sessionId: newId, width: TILE_EXPANDED_W, height: TILE_EXPANDED_H })
+              useTerminalStore.getState().spawn(activeProject).then(tid => {
+                useTerminalStore.getState().expandCanvasTile(newId, tid)
+                immediateSave()
+              })
+            }}
+            className="text-ax-text-ghost hover:text-ax-text-secondary bg-ax-elevated/80
+              backdrop-blur px-1.5 py-1 rounded transition-colors"
+            title="New Claude session"
+          >
+            <Plus size={12} />
+          </button>
+        )}
         {!reorgActive && tiles.length > 0 && (
           <button
             onClick={onReorganize}

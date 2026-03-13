@@ -3,7 +3,9 @@ import { useProjectStore } from '@/store/projectStore'
 import { useBackend } from '@/providers/DataProvider'
 import { useRollups } from '@/hooks/useRollups'
 import { formatDate, getGreeting } from '@/lib/utils'
-import { Coffee, Send, Clock, Sparkles, RotateCcw } from 'lucide-react'
+import { Coffee, Send, Clock, Sparkles, RotateCcw, Terminal, ChevronDown, X as XIcon } from 'lucide-react'
+import { useTerminalStore } from '@/store/terminalStore'
+import { CanvasTerminal } from './agent/CanvasTerminal'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -40,6 +42,21 @@ export function MorningView() {
   const [error, setError] = useState<string | null>(null)
   const [pastSessions, setPastSessions] = useState<Array<{ filename: string; date: string; content: string }>>([])
   const [showHistory, setShowHistory] = useState(false)
+  const [terminalPanelOpen, setTerminalPanelOpen] = useState(true)
+  const [morningTerminalId, setMorningTerminalId] = useState<string | null>(null)
+
+  // Active terminals from global store
+  const allTerminals = useTerminalStore(s => s.terminals)
+  const activeTerminals = Object.entries(allTerminals)
+    .filter(([, e]) => e.status === 'connected' || e.status === 'connecting' || e.status === 'spawning')
+    .map(([id, e]) => ({ terminalId: id, ...e }))
+
+  // Auto-select first terminal when panel opens and none is selected
+  useEffect(() => {
+    if (terminalPanelOpen && !morningTerminalId && activeTerminals.length > 0) {
+      setMorningTerminalId(activeTerminals[0].terminalId)
+    }
+  }, [terminalPanelOpen, morningTerminalId, activeTerminals])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -416,12 +433,21 @@ export function MorningView() {
       {/* Chat area */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto pb-4 min-h-0 scrollbar-hide flex items-center justify-center"
+        className={`flex-1 overflow-y-auto pb-4 min-h-0 scrollbar-hide relative
+          ${messages.length === 0 ? 'flex items-center justify-center' : ''}`}
       >
-        <div className="relative w-full max-w-md space-y-4 mx-auto">
-          <div className="absolute -inset-x-4 -inset-y-8 content-shield-wrap">
-            <div className="w-full h-full content-shield rounded-[60px]" />
-          </div>
+        {/* Subtle frosted column behind chat content */}
+        {messages.length > 0 && (
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[calc(100%+2rem)]
+            bg-ax-elevated/30 backdrop-blur-sm rounded-2xl pointer-events-none" />
+        )}
+        <div className={`relative w-full mx-auto transition-[max-width] duration-500 ease-out
+          ${messages.length === 0 ? 'max-w-md space-y-4' : 'space-y-6'}`}>
+          {messages.length === 0 && (
+            <div className="absolute -inset-x-4 -inset-y-8 content-shield-wrap">
+              <div className="w-full h-full content-shield rounded-[60px]" />
+            </div>
+          )}
           <div className="relative">
         {/* Empty state */}
         {messages.length === 0 && (
@@ -485,12 +511,14 @@ export function MorningView() {
 
         {/* Mini thinking for follow-up messages (has messages but streaming with no new content yet) */}
         {status === 'streaming' && messages.length > 0 && !messages.some(m => m.streaming) && (
-          <div className="flex justify-start animate-fade-in">
-            <div className="bg-ax-elevated border border-ax-border rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="thinking-dot w-1.5 h-1.5 rounded-full bg-ax-brand" />
-              ))}
-              <span className="text-small text-ax-text-tertiary">Thinking...</span>
+          <div className="animate-fade-in border-l-2 border-ax-brand/20 pl-5">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="thinking-dot w-1 h-1 rounded-full bg-ax-brand/50" />
+                ))}
+              </div>
+              <span className="text-[10px] font-mono text-ax-text-ghost uppercase tracking-wider">thinking</span>
             </div>
           </div>
         )}
@@ -498,44 +526,100 @@ export function MorningView() {
         </div>
       </div>
 
+      {/* Active terminals strip */}
+      {activeTerminals.length > 0 && (
+        <div className="shrink-0 border-t border-ax-border-subtle">
+          <button
+            onClick={() => { setTerminalPanelOpen(o => !o); if (terminalPanelOpen) setMorningTerminalId(null) }}
+            className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-ax-sunken/50 transition-colors"
+          >
+            <Terminal size={12} className="text-ax-text-tertiary" />
+            <span className="font-mono text-[10px] text-ax-text-secondary uppercase tracking-wider">
+              {activeTerminals.length} active terminal{activeTerminals.length !== 1 ? 's' : ''}
+            </span>
+            <ChevronDown size={12} className={`text-ax-text-ghost ml-auto transition-transform ${terminalPanelOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {terminalPanelOpen && !morningTerminalId && (
+            <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+              {activeTerminals.map(t => (
+                <button
+                  key={t.terminalId}
+                  onClick={() => setMorningTerminalId(t.terminalId)}
+                  className="shrink-0 w-48 h-16 rounded-lg bg-ax-sunken border border-ax-border-subtle
+                    hover:border-ax-brand/40 transition-colors flex flex-col justify-center px-3 gap-1"
+                >
+                  <span className="font-mono text-[10px] text-ax-text-secondary truncate">
+                    {t.sessionId || t.project}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-ax-success animate-pulse" />
+                    <span className="font-mono text-[9px] text-ax-text-ghost">{t.status}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {terminalPanelOpen && morningTerminalId && (
+            <div className="relative" style={{ height: '280px' }}>
+              <div className="absolute top-1 right-2 z-10 flex items-center gap-1">
+                <button
+                  onClick={() => setMorningTerminalId(null)}
+                  className="p-1 rounded text-ax-text-ghost hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors"
+                  title="Back to list"
+                >
+                  <XIcon size={12} />
+                </button>
+              </div>
+              <CanvasTerminal
+                terminalId={morningTerminalId}
+                width={600}
+                height={280}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Input area */}
       {(status === 'ready' || status === 'streaming') && (
         <div className="shrink-0 pt-3 border-t border-ax-border-subtle">
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <div className="flex-1 relative">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={status === 'streaming' ? 'Waiting for response...' : 'Ask about priorities, plan the day, or discuss decisions...'}
+                placeholder={status === 'streaming' ? 'Waiting...' : 'Ask about priorities, plan the day...'}
                 disabled={status === 'streaming'}
                 rows={1}
-                className="w-full bg-ax-elevated border border-ax-border rounded-xl px-4 py-3 pr-12
-                  text-body text-ax-text-primary placeholder-ax-text-tertiary resize-none
-                  focus:outline-none focus:border-ax-brand focus:ring-1 focus:ring-ax-brand/20
-                  disabled:opacity-50 transition-colors"
-                style={{ minHeight: '48px', maxHeight: '120px' }}
+                className="w-full bg-transparent border border-ax-border-subtle rounded-lg px-3 py-2.5 pr-10
+                  text-small text-ax-text-primary placeholder-ax-text-ghost resize-none
+                  focus:outline-none focus:border-ax-brand/40
+                  disabled:opacity-40 transition-colors"
+                style={{ minHeight: '40px', maxHeight: '100px' }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement
                   target.style.height = 'auto'
-                  target.style.height = Math.min(target.scrollHeight, 120) + 'px'
+                  target.style.height = Math.min(target.scrollHeight, 100) + 'px'
                 }}
               />
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || status !== 'ready'}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg
-                  text-ax-text-tertiary hover:text-ax-brand disabled:opacity-30
-                  transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ax-brand"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded
+                  text-ax-text-ghost hover:text-ax-brand disabled:opacity-20
+                  transition-colors focus:outline-none"
               >
-                <Send size={16} />
+                <Send size={13} />
               </button>
             </div>
           </div>
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-micro text-ax-text-tertiary">
-              Connected to Claude CLI
+          <div className="flex items-center justify-between mt-1.5">
+            <span className="text-[9px] font-mono text-ax-text-ghost uppercase tracking-wider">
+              claude cli
             </span>
             {status === 'ready' && messages.length > 1 && (
               <button
@@ -544,10 +628,11 @@ export function MorningView() {
                   setStatus('idle')
                   setInput('')
                 }}
-                className="flex items-center gap-1 text-micro text-ax-text-tertiary hover:text-ax-text-secondary transition-colors"
+                className="flex items-center gap-1 text-[9px] font-mono text-ax-text-ghost hover:text-ax-text-secondary
+                  uppercase tracking-wider transition-colors"
               >
-                <RotateCcw size={10} />
-                New session
+                <RotateCcw size={8} />
+                reset
               </button>
             )}
           </div>
@@ -670,7 +755,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
-        <span className="text-micro text-ax-text-tertiary bg-ax-sunken px-3 py-1 rounded-full">
+        <span className="text-[10px] font-mono text-ax-text-ghost uppercase tracking-widest">
           {message.content}
         </span>
       </div>
@@ -680,9 +765,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] bg-ax-brand text-white rounded-2xl rounded-br-md px-4 py-3">
-          <p className="text-body leading-relaxed whitespace-pre-wrap">{message.content}</p>
-          <time className="block text-micro opacity-50 mt-1 text-right">
+        <div className="max-w-[70%]">
+          <p className="text-[13px] text-ax-text-primary leading-[1.7] whitespace-pre-wrap text-right">{message.content}</p>
+          <time className="block text-[9px] font-mono text-ax-text-ghost mt-1 text-right">
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </time>
         </div>
@@ -690,29 +775,27 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     )
   }
 
-  // Assistant message
+  // Assistant message — editorial document style, no bubble
   return (
-    <div className="flex justify-start animate-fade-in-up">
-      <div className="max-w-[90%]">
-        <div className="bg-ax-elevated border border-ax-border rounded-2xl rounded-bl-md px-5 py-4">
-          <div className="text-body text-ax-text-primary leading-relaxed whitespace-pre-wrap">
-            <AssistantContent content={message.content} />
-          </div>
-          {message.streaming && (
-            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-ax-border-subtle">
-              <div className="flex gap-1">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="thinking-dot w-1 h-1 rounded-full bg-ax-brand/60" />
-                ))}
-              </div>
-              <span className="text-micro text-ax-text-ghost">streaming</span>
-            </div>
-          )}
+    <div className="animate-fade-in-up">
+      <div className="border-l-2 border-ax-brand/20 pl-5">
+        <div className="text-[13px] text-ax-text-secondary leading-[1.7] whitespace-pre-wrap">
+          <AssistantContent content={message.content} />
         </div>
-        <time className="block text-micro text-ax-text-tertiary mt-1 ml-2">
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </time>
+        {message.streaming && (
+          <div className="flex items-center gap-2 mt-3">
+            <div className="flex gap-1">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="thinking-dot w-1 h-1 rounded-full bg-ax-brand/50" />
+              ))}
+            </div>
+            <span className="text-[9px] font-mono text-ax-text-ghost uppercase tracking-wider">streaming</span>
+          </div>
+        )}
       </div>
+      <time className="block text-[9px] font-mono text-ax-text-ghost mt-2 pl-5">
+        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </time>
     </div>
   )
 }
@@ -728,21 +811,33 @@ function AssistantContent({ content }: { content: string }) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Headings
+    // H1 (rarely used but handle it)
+    const h1Match = line.match(/^#\s+(.+)/)
+    if (h1Match && !line.startsWith('##')) {
+      elements.push(
+        <h2 key={i} className="font-serif italic text-[18px] text-ax-text-primary tracking-tight mt-5 mb-3 first:mt-0">
+          {formatInline(h1Match[1])}
+        </h2>
+      )
+      continue
+    }
+
+    // H2
     const h2Match = line.match(/^##\s+(.+)/)
     if (h2Match) {
       elements.push(
-        <h3 key={i} className="font-serif text-h4 text-ax-text-primary font-medium mt-4 mb-2 first:mt-0">
+        <h3 key={i} className="font-serif italic text-[15px] text-ax-text-primary tracking-tight mt-5 mb-2 first:mt-0 pb-1.5 border-b border-ax-border-subtle">
           {formatInline(h2Match[1])}
         </h3>
       )
       continue
     }
 
+    // H3
     const h3Match = line.match(/^###\s+(.+)/)
     if (h3Match) {
       elements.push(
-        <h4 key={i} className="font-medium text-ax-text-primary mt-3 mb-1">
+        <h4 key={i} className="font-mono text-[10px] text-ax-text-tertiary uppercase tracking-widest mt-4 mb-1.5 first:mt-0">
           {formatInline(h3Match[1])}
         </h4>
       )
@@ -751,13 +846,18 @@ function AssistantContent({ content }: { content: string }) {
 
     // Horizontal rule
     if (line.match(/^[-*_]{3,}\s*$/)) {
-      elements.push(<hr key={i} className="border-ax-border-subtle my-3" />)
+      elements.push(
+        <div key={i} className="my-4 flex items-center gap-3">
+          <div className="flex-1 h-px bg-ax-border-subtle" />
+          <div className="w-1 h-1 rounded-full bg-ax-text-ghost" />
+          <div className="flex-1 h-px bg-ax-border-subtle" />
+        </div>
+      )
       continue
     }
 
     // Code block markers
     if (line.startsWith('```')) {
-      // Collect code block
       const lang = line.slice(3).trim()
       const codeLines: string[] = []
       i++
@@ -766,9 +866,9 @@ function AssistantContent({ content }: { content: string }) {
         i++
       }
       elements.push(
-        <pre key={`code-${i}`} className="bg-ax-sunken rounded-lg p-3 my-2 overflow-x-auto border border-ax-border-subtle">
-          {lang && <div className="font-mono text-micro text-ax-text-tertiary mb-1 uppercase">{lang}</div>}
-          <code className="font-mono text-small text-ax-text-primary">{codeLines.join('\n')}</code>
+        <pre key={`code-${i}`} className="bg-ax-sunken/60 rounded-md px-3 py-2.5 my-2 overflow-x-auto">
+          {lang && <div className="font-mono text-[9px] text-ax-text-ghost mb-1.5 uppercase tracking-wider">{lang}</div>}
+          <code className="font-mono text-[11px] text-ax-text-primary leading-relaxed">{codeLines.join('\n')}</code>
         </pre>
       )
       continue
@@ -778,7 +878,7 @@ function AssistantContent({ content }: { content: string }) {
     const quoteMatch = line.match(/^>\s*(.*)/)
     if (quoteMatch) {
       elements.push(
-        <div key={i} className="border-l-2 border-ax-brand/40 pl-3 py-0.5 text-ax-text-secondary italic">
+        <div key={i} className="border-l border-ax-text-ghost/30 pl-3 py-0.5 text-ax-text-tertiary italic text-[12px]">
           {formatInline(quoteMatch[1])}
         </div>
       )
@@ -791,8 +891,8 @@ function AssistantContent({ content }: { content: string }) {
       const num = line.match(/(\d+)\./)?.[1] || '1'
       const indent = Math.floor(numMatch[1].length / 2)
       elements.push(
-        <div key={i} className="flex gap-2 mb-1" style={{ paddingLeft: `${indent * 16}px` }}>
-          <span className="font-mono text-ax-brand shrink-0 w-5 text-right">{num}.</span>
+        <div key={i} className="flex gap-2.5 mb-0.5" style={{ paddingLeft: `${indent * 14}px` }}>
+          <span className="font-mono text-[10px] text-ax-brand/70 shrink-0 w-4 text-right pt-[2px]">{num}.</span>
           <span>{formatInline(numMatch[2])}</span>
         </div>
       )
@@ -804,8 +904,8 @@ function AssistantContent({ content }: { content: string }) {
     if (bulletMatch) {
       const indent = Math.floor(bulletMatch[1].length / 2)
       elements.push(
-        <div key={i} className="flex gap-2 mb-1" style={{ paddingLeft: `${indent * 16}px` }}>
-          <span className="text-ax-text-tertiary shrink-0">{indent > 0 ? '◦' : '•'}</span>
+        <div key={i} className="flex gap-2.5 mb-0.5" style={{ paddingLeft: `${indent * 14}px` }}>
+          <span className="text-ax-text-ghost shrink-0 text-[8px] pt-[4px]">{indent > 0 ? '◦' : '●'}</span>
           <span>{formatInline(bulletMatch[2])}</span>
         </div>
       )
@@ -814,9 +914,9 @@ function AssistantContent({ content }: { content: string }) {
 
     // Regular text
     if (line.trim()) {
-      elements.push(<p key={i} className="mb-1">{formatInline(line)}</p>)
+      elements.push(<p key={i} className="mb-0.5">{formatInline(line)}</p>)
     } else {
-      elements.push(<div key={i} className="h-1.5" />)
+      elements.push(<div key={i} className="h-2" />)
     }
   }
 
@@ -827,14 +927,14 @@ function formatInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**'))
-      return <strong key={i} className="text-ax-text-primary font-medium">{part.slice(2, -2)}</strong>
+      return <strong key={i} className="text-ax-text-primary font-semibold">{part.slice(2, -2)}</strong>
     if (part.startsWith('*') && part.endsWith('*') && part.length > 2)
-      return <em key={i}>{part.slice(1, -1)}</em>
+      return <em key={i} className="text-ax-text-secondary">{part.slice(1, -1)}</em>
     if (part.startsWith('`') && part.endsWith('`'))
-      return <code key={i} className="font-mono text-small bg-ax-sunken px-1 py-0.5 rounded">{part.slice(1, -1)}</code>
+      return <code key={i} className="font-mono text-[11px] bg-ax-sunken/60 px-1 py-px rounded text-ax-text-primary">{part.slice(1, -1)}</code>
     const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
     if (linkMatch)
-      return <span key={i} className="text-ax-brand underline underline-offset-2">{linkMatch[1]}</span>
+      return <span key={i} className="text-ax-brand underline underline-offset-2 decoration-ax-brand/30">{linkMatch[1]}</span>
     return <span key={i}>{part}</span>
   })
 }
