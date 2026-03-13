@@ -1,6 +1,7 @@
+import { useState, useRef, useEffect } from 'react'
 import { useProjects } from '@/hooks/useProjects'
 import { useUIStore, type ViewId } from '@/store/uiStore'
-import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard } from 'lucide-react'
 
 const mainNav: { id: ViewId; label: string; icon: typeof Clock }[] = [
   { id: 'morning', label: 'Morning', icon: Coffee },
@@ -13,11 +14,39 @@ const utilNav: { id: ViewId; label: string; icon: typeof Clock }[] = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
+const SHORTCUTS: { keys: string[]; label: string }[] = [
+  { keys: ['Cmd', '1–5'], label: 'Switch view' },
+  { keys: ['Cmd', '←', '→'], label: 'Slide views' },
+  { keys: ['Cmd', '↑', '↓'], label: 'Switch project' },
+  { keys: ['Cmd', 'K'], label: 'Search' },
+  { keys: ['Cmd', 'Shift', '/'], label: 'This panel' },
+]
+
 export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
   const { projects, activeProject, setActiveProject } = useProjects()
   const { activeView, setView, theme, toggleTheme, sidebarOpen, toggleSidebar } = useUIStore()
   const today = new Date().toISOString().split('T')[0]
   const collapsed = !sidebarOpen
+
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const shortcutsRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!shortcutsOpen) return
+    const handler = (e: MouseEvent) => {
+      if (shortcutsRef.current && !shortcutsRef.current.contains(e.target as Node)) {
+        setShortcutsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [shortcutsOpen])
+
+  useEffect(() => {
+    const toggle = () => setShortcutsOpen(o => !o)
+    window.addEventListener('toggle-shortcuts', toggle)
+    return () => window.removeEventListener('toggle-shortcuts', toggle)
+  }, [])
 
   return (
     <aside
@@ -184,7 +213,35 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
       )}
 
       {/* Footer */}
-      <div className={`${collapsed ? 'px-1' : 'px-3'} pb-5 space-y-1`}>
+      <div className={`${collapsed ? 'px-1' : 'px-3'} pb-5 space-y-1 relative`}>
+        {/* Keyboard shortcuts panel */}
+        {shortcutsOpen && (
+          <div
+            ref={shortcutsRef}
+            className="absolute bottom-full left-2 right-2 mb-2 bg-[#1A1614] border border-white/10
+              rounded-lg shadow-xl overflow-hidden animate-fade-in"
+          >
+            <div className="px-3 pt-2.5 pb-1.5 border-b border-white/5">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--ax-text-on-dark-muted)]">
+                Shortcuts
+              </span>
+            </div>
+            <div className="px-1 py-1.5">
+              {SHORTCUTS.map(({ keys, label }) => (
+                <div key={label} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-white/5">
+                  <span className="text-[12px] text-[var(--ax-text-on-dark-muted)]">{label}</span>
+                  <span className="flex items-center gap-0.5">
+                    {keys.map((k) => (
+                      <kbd key={k} className="font-mono text-[10px] text-[var(--ax-text-on-dark)] bg-white/8 border border-white/10
+                        px-1 py-0.5 rounded leading-none">{k}</kbd>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={onOpenPalette}
           aria-label="Search (Cmd+K)"
@@ -195,7 +252,31 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
         >
           <Search size={collapsed ? 18 : 14} strokeWidth={1.5} aria-hidden="true" />
           {!collapsed && <span>Search</span>}
-          {!collapsed && <span className="ml-auto font-mono text-micro opacity-40" aria-hidden="true">&#x2318;K</span>}
+          {!collapsed && (
+            <span className="ml-auto flex items-center gap-0.5" aria-hidden="true">
+              <kbd className="font-mono text-[9px] opacity-40 bg-white/5 px-1 py-px rounded leading-none">Cmd</kbd>
+              <kbd className="font-mono text-[9px] opacity-40 bg-white/5 px-1 py-px rounded leading-none">K</kbd>
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setShortcutsOpen(o => !o)}
+          aria-label="Keyboard shortcuts"
+          className={`w-full flex items-center rounded-lg
+            text-[var(--ax-text-on-dark-muted)] hover:bg-white/5 transition-colors text-small
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
+            ${collapsed ? 'justify-center p-2' : 'gap-2 px-3 py-2'}
+            ${shortcutsOpen ? 'bg-white/5 text-[var(--ax-text-on-dark)]' : ''}`}
+        >
+          <Keyboard size={collapsed ? 18 : 14} strokeWidth={1.5} aria-hidden="true" />
+          {!collapsed && <span>Shortcuts</span>}
+          {!collapsed && (
+            <span className="ml-auto flex items-center gap-0.5" aria-hidden="true">
+              <kbd className="font-mono text-[9px] opacity-40 bg-white/5 px-1 py-px rounded leading-none">Cmd</kbd>
+              <kbd className="font-mono text-[9px] opacity-40 bg-white/5 px-1 py-px rounded leading-none">Shift</kbd>
+              <kbd className="font-mono text-[9px] opacity-40 bg-white/5 px-1 py-px rounded leading-none">/</kbd>
+            </span>
+          )}
         </button>
         <button
           onClick={toggleTheme}

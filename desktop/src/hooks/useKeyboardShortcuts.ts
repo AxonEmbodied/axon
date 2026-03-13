@@ -51,6 +51,13 @@ export function useKeyboardShortcuts(onTogglePalette: () => void) {
         return
       }
 
+      // Cmd+? (Cmd+Shift+/): toggle shortcuts panel
+      if (meta && (e.key === '?' || (e.shiftKey && e.key === '/'))) {
+        e.preventDefault()
+        window.dispatchEvent(new Event('toggle-shortcuts'))
+        return
+      }
+
       // Cmd+1-5: switch views
       if (meta && e.key >= '1' && e.key <= '5') {
         e.preventDefault()
