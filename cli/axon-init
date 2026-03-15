@@ -113,12 +113,19 @@ GIT_TOTAL=0
 GIT_FIRST=""
 GIT_LOG_90=""
 GIT_BRANCHES=""
+EMPTY_REPO=false
 if git rev-parse --git-dir > /dev/null 2>&1; then
-    GIT_TOTAL=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-    GIT_FIRST=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1 | xargs git log --oneline -1 2>/dev/null || echo "unknown")
-    GIT_LOG_90=$(git log --since="90 days ago" --format="%h %ad %s" --date=short -200 2>/dev/null)
-    GIT_BRANCHES=$(git branch -a 2>/dev/null)
-    echo "  ✓ Git: $GIT_TOTAL commits, first: ${GIT_FIRST:0:40}..."
+    if git rev-parse HEAD > /dev/null 2>&1; then
+        GIT_TOTAL=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+        GIT_FIRST=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1 | xargs git log --oneline -1 2>/dev/null || echo "unknown")
+        GIT_LOG_90=$(git log --since="90 days ago" --format="%h %ad %s" --date=short -200 2>/dev/null)
+        GIT_BRANCHES=$(git branch -a 2>/dev/null)
+        echo "  ✓ Git: $GIT_TOTAL commits, first: ${GIT_FIRST:0:40}..."
+    else
+        EMPTY_REPO=true
+        GIT_BRANCHES=$(git branch -a 2>/dev/null)
+        echo "  ⚠ Git repo with no commits yet — genesis will use directory structure and docs only"
+    fi
 else
     echo "  · Not a git repository"
 fi
@@ -155,6 +162,39 @@ Tailor the genesis rollup to their perspective — focus on the areas and concer
 "
 fi
 
+# Build prompt sections based on repo state
+if [[ "$EMPTY_REPO" == "true" ]]; then
+    GIT_SECTION="## Git Status
+This is a new repository with no commits yet. Focus the genesis on project documentation, directory structure, and intended architecture."
+    TASK_SECTION="Produce a GENESIS ROLLUP with:
+1. **Project Overview** — what this is based on docs and file structure
+2. **Architecture Snapshot** — key modules, intended structure from directory layout
+3. **Current State** — what exists so far, what's scaffolded
+4. **Recommended Next Steps** — concrete first moves for a fresh project
+
+Keep it concise — this is a new project, not a reconstruction of deep history."
+else
+    GIT_SECTION="## Stats: $GIT_TOTAL total commits. First: $GIT_FIRST
+## Branches:
+$GIT_BRANCHES
+
+## Last 90 Days of Commits
+$GIT_LOG_90"
+    TASK_SECTION="Produce a GENESIS ROLLUP with:
+1. **Project Overview** — what this is, architecture, scale
+2. **Recent Trajectory** (last 2 weeks) — what's hot
+3. **Architecture Snapshot** — key modules, databases, deployment
+4. **Inferred Decision History** — major decisions visible in commits (mark as inferred)
+5. **Current State** — what's working, what's in progress
+6. **Open Loops** — unfinished work from recent commits
+7. **Recommended Next Steps** — concrete, intuitive, make the dev say 'yes, exactly right'"
+fi
+
+GENESIS_ERR="$WORKSPACE/.genesis-err.log"
+
+# Unset CLAUDECODE to avoid nested session detection
+unset CLAUDECODE 2>/dev/null || true
+
 GENESIS_RESULT=$(echo "You are Axon, producing a GENESIS ROLLUP — your first look at this project.
 
 ## IMPORTANT: Epistemic Honesty
@@ -170,38 +210,33 @@ Be honest about this limitation:
 ## Project Documentation
 $PROJECT_DOCS
 
-## Stats: $GIT_TOTAL total commits. First: $GIT_FIRST
-## Branches:
-$GIT_BRANCHES
+$GIT_SECTION
 
 ## Directory Structure
 $DIR_STRUCT
-
-## Last 90 Days of Commits
-$GIT_LOG_90
 $USER_CONTEXT_BLOCK
 ## Task
 
-Produce a GENESIS ROLLUP with:
-1. **Project Overview** — what this is, architecture, scale
-2. **Recent Trajectory** (last 2 weeks) — what's hot
-3. **Architecture Snapshot** — key modules, databases, deployment
-4. **Inferred Decision History** — major decisions visible in commits (mark as inferred)
-5. **Current State** — what's working, what's in progress
-6. **Open Loops** — unfinished work from recent commits
-7. **Recommended Next Steps** — concrete, intuitive, make the dev say 'yes, exactly right'
+$TASK_SECTION
 
-Be conversational, precise, specific." | claude -p --output-format json 2>/dev/null)
+Be conversational, precise, specific." | claude -p --output-format json 2>"$GENESIS_ERR")
 
 # Extract result
 ROLLUP_TEXT=$(echo "$GENESIS_RESULT" | jq -r '.result' 2>/dev/null)
 USAGE=$(echo "$GENESIS_RESULT" | jq '.usage' 2>/dev/null)
 
 if [[ -z "$ROLLUP_TEXT" ]] || [[ "$ROLLUP_TEXT" == "null" ]]; then
-    echo "ERROR: Genesis rollup failed. Raw output:"
+    echo "ERROR: Genesis rollup failed."
+    if [[ -s "$GENESIS_ERR" ]]; then
+        echo "Stderr:"
+        cat "$GENESIS_ERR"
+    fi
+    echo "Raw output:"
     echo "$GENESIS_RESULT"
+    rm -f "$GENESIS_ERR"
     exit 1
 fi
+rm -f "$GENESIS_ERR"
 
 # Write genesis episode
 echo "$ROLLUP_TEXT" > "$WORKSPACE/episodes/0000_genesis.md"
