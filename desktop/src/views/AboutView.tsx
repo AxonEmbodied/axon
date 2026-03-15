@@ -53,7 +53,7 @@ function GitHubTab() {
             href={REPO_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 font-mono text-micro px-4 py-2 rounded-lg bg-ax-text-primary text-ax-base hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2 font-mono text-micro px-4 py-2 rounded-lg bg-[#24292f] text-white hover:opacity-90 transition-opacity"
           >
             <GitHubIcon size={14} />
             View on GitHub
@@ -154,13 +154,19 @@ function WebsiteTab() {
             Open in browser <ExternalLink size={10} />
           </a>
         </div>
-        <iframe
-          src={WEBSITE_URL}
-          title="Robert Maye's website"
-          className="w-full border-0"
-          style={{ height: '500px' }}
-          sandbox="allow-scripts allow-same-origin"
-        />
+        <div className="overflow-hidden" style={{ height: '500px' }}>
+          <iframe
+            src={WEBSITE_URL}
+            title="Robert Maye's website"
+            className="border-0 origin-top-left"
+            style={{
+              width: '166.67%',
+              height: '833px',
+              transform: 'scale(0.6)',
+            }}
+            sandbox="allow-scripts allow-same-origin"
+          />
+        </div>
       </div>
     </div>
   )
@@ -199,7 +205,7 @@ export function AboutView() {
           onClick={() => setTab('github')}
           className={`flex-1 flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl font-mono text-small transition-all duration-200
             ${tab === 'github'
-              ? 'bg-ax-text-primary text-ax-base shadow-md'
+              ? 'bg-ax-elevated border-2 border-ax-text-primary text-ax-text-primary shadow-md'
               : 'bg-ax-elevated border border-ax-border text-ax-text-secondary hover:bg-ax-sunken'
             }`}
         >
