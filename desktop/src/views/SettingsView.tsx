@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { parse as parseYaml } from 'yaml'
 import { useProjectStore } from '@/store/projectStore'
 import { useUIStore } from '@/store/uiStore'
@@ -244,14 +245,96 @@ export function SettingsView() {
     }
   }
 
+  const visibleProjects = useMemo(() => projects.filter(p => p.status !== 'archived'), [projects])
+  const selectedIdx = visibleProjects.findIndex(p => p.name === selectedProject)
+  const pillsRef = useRef<HTMLDivElement>(null)
+  const [pillOffsets, setPillOffsets] = useState<{ left: string; width: string } | null>(null)
+
+  // Measure the active pill and position the sliding highlight
+  // useLayoutEffect so measurement happens before paint on initial render
+  useLayoutEffect(() => {
+    if (!pillsRef.current || !selectedProject) return
+    const container = pillsRef.current
+    const pill = container.querySelector(`[data-project="${CSS.escape(selectedProject)}"]`) as HTMLElement | null
+    if (!pill) return
+    const containerRect = container.getBoundingClientRect()
+    const pillRect = pill.getBoundingClientRect()
+    setPillOffsets({
+      left: `${pillRect.left - containerRect.left + container.scrollLeft}px`,
+      width: `${pillRect.width}px`,
+    })
+    pill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [selectedProject])
+
+  const navigateProject = useCallback((dir: -1 | 1) => {
+    const idx = selectedIdx + dir
+    if (idx >= 0 && idx < visibleProjects.length) setSelectedProject(visibleProjects[idx].name)
+  }, [selectedIdx, visibleProjects])
+
   const contextDirty = config ? contextDraft.trim() !== (config.userContext || '') : false
+
+  // Header is always rendered so the pill bar stays mounted and can animate
+  const header = (
+    <header className="mb-6">
+      <h1 className="font-serif italic text-display text-ax-text-primary tracking-tight">
+        Settings
+      </h1>
+
+      {/* Project tab selector */}
+      {visibleProjects.length > 1 && (
+        <div className="flex items-center gap-1.5 mt-3">
+          <button
+            onClick={() => navigateProject(-1)}
+            disabled={selectedIdx <= 0}
+            aria-label="Previous project"
+            className="p-1 rounded text-ax-text-tertiary hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors disabled:opacity-20 disabled:cursor-not-allowed shrink-0"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <div ref={pillsRef} className="relative flex items-center gap-0 overflow-x-auto scrollbar-hide rounded-lg bg-ax-sunken p-0.5">
+            {/* Sliding highlight */}
+            {pillOffsets && (
+              <div
+                className="absolute top-0.5 bottom-0.5 rounded-md bg-ax-elevated shadow-sm border border-ax-border-subtle transition-[left,width] duration-200 ease-out"
+                style={{
+                  left: pillOffsets.left,
+                  width: pillOffsets.width,
+                }}
+              />
+            )}
+            {visibleProjects.map(p => (
+              <button
+                key={p.name}
+                data-project={p.name}
+                onClick={() => setSelectedProject(p.name)}
+                className={`relative z-[1] font-mono text-micro px-3 py-1 rounded-md whitespace-nowrap transition-colors duration-150
+                  ${selectedProject === p.name
+                    ? 'text-ax-text-primary'
+                    : 'text-ax-text-tertiary hover:text-ax-text-secondary'
+                  }`}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => navigateProject(1)}
+            disabled={selectedIdx >= visibleProjects.length - 1}
+            aria-label="Next project"
+            className="p-1 rounded text-ax-text-tertiary hover:text-ax-text-secondary hover:bg-ax-sunken transition-colors disabled:opacity-20 disabled:cursor-not-allowed shrink-0"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+    </header>
+  )
 
   if (loading) {
     return (
-      <div className="space-y-4 animate-pulse">
-        <div className="h-8 bg-ax-sunken rounded w-48" />
-        <div className="h-4 bg-ax-sunken rounded w-64" />
-        <div className="space-y-4 mt-6">
+      <div>
+        {header}
+        <div className="space-y-4 animate-pulse">
           {[0, 1, 2].map(i => (
             <div key={i} className="h-32 bg-ax-sunken rounded-xl" />
           ))}
@@ -262,48 +345,34 @@ export function SettingsView() {
 
   if (error) {
     return (
-      <div className="text-center py-20">
-        <p className="font-serif italic text-h3 text-ax-error mb-2">Error</p>
-        <p className="text-body text-ax-text-secondary">{error}</p>
+      <div>
+        {header}
+        <div className="text-center py-20">
+          <p className="font-serif italic text-h3 text-ax-error mb-2">Error</p>
+          <p className="text-body text-ax-text-secondary">{error}</p>
+        </div>
       </div>
     )
   }
 
   if (!config || !selectedProject) {
     return (
-      <div className="text-center py-20">
-        <p className="font-serif italic text-h3 text-ax-text-tertiary mb-2">No project selected</p>
-        <p className="text-body text-ax-text-tertiary">Select a project to view its settings</p>
+      <div>
+        {header}
+        <div className="text-center py-20">
+          <p className="font-serif italic text-h3 text-ax-text-tertiary mb-2">No project selected</p>
+          <p className="text-body text-ax-text-tertiary">Select a project to view its settings</p>
+        </div>
       </div>
     )
   }
 
   return (
     <div>
-      <header className="mb-6">
-        <h1 className="font-serif italic text-display text-ax-text-primary tracking-tight">
-          Settings
-        </h1>
+      {header}
 
-        {/* Project tab selector */}
-        {projects.length > 1 && (
-          <div className="flex items-center gap-1 mt-3 overflow-x-auto pb-1">
-            {projects.filter(p => p.status !== 'archived').map(p => (
-              <button
-                key={p.name}
-                onClick={() => setSelectedProject(p.name)}
-                className={`font-mono text-micro px-3 py-1 rounded-full whitespace-nowrap transition-all duration-150
-                  ${selectedProject === p.name
-                    ? 'bg-ax-brand/15 text-ax-brand border border-ax-brand/30'
-                    : 'text-ax-text-tertiary hover:text-ax-text-secondary hover:bg-ax-sunken border border-transparent'
-                  }`}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </header>
+      {/* Keyed container — remounts on project switch for animation */}
+      <div key={selectedProject}>
 
       {/* Project Info */}
       <SettingsCard title="Project" className="mb-5 animate-fade-in-up">
@@ -489,6 +558,8 @@ export function SettingsView() {
           </div>
         </div>
       </SettingsCard>
+
+      </div>{/* end keyed container */}
 
       {showRemoveDialog && (
         <ConfirmDialog
