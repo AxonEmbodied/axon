@@ -111,10 +111,24 @@ export function CanvasView({
   // Keep ref synced
   viewportRef.current = viewport
 
-  const sessionMap = useMemo(
-    () => new Map(sessions.map(s => [s.id, s])),
-    [sessions]
-  )
+  // Optimistic nickname overrides — applied instantly, cleared on next refetch
+  const [nicknameOverrides, setNicknameOverrides] = useState<Map<string, string>>(new Map())
+
+  const sessionMap = useMemo(() => {
+    const map = new Map(sessions.map(s => [s.id, s]))
+    // Apply optimistic overrides
+    for (const [id, nickname] of nicknameOverrides) {
+      const s = map.get(id)
+      if (s) map.set(id, { ...s, nickname })
+    }
+    return map
+  }, [sessions, nicknameOverrides])
+
+  // Clear overrides when sessions prop updates (refetch completed)
+  useEffect(() => {
+    if (nicknameOverrides.size > 0) setNicknameOverrides(new Map())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions])
 
   // Scale class for detail level
   const [scaleClass, setScaleClass] = useState<'full' | 'thumb' | 'dot'>(() =>
@@ -130,13 +144,14 @@ export function CanvasView({
     const session = sessionMap.get(sessionId)
     const current = session?.nickname || session?.first_prompt || ''
     if (trimmed === current || !trimmed) return
+    // Optimistic update — show new name immediately
+    setNicknameOverrides(prev => new Map(prev).set(sessionId, trimmed))
     try {
       await fetch(`/api/axon/sessions/${encodeURIComponent(sessionId)}/meta`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nickname: trimmed }),
       })
-      // Refresh session list to pick up new nickname
       onSessionRenamed?.()
     } catch { /* silent */ }
   }, [sessionMap, onSessionRenamed])
