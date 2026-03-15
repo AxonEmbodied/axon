@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useProjects } from '@/hooks/useProjects'
 import { useProjectStore } from '@/store/projectStore'
 import { useUIStore, type ViewId } from '@/store/uiStore'
-import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, ChevronRight, Archive, GitBranch, GripVertical } from 'lucide-react'
+import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, ChevronRight, Archive, GitBranch, GripVertical, HelpCircle } from 'lucide-react'
 
 const mainNav: { id: ViewId; label: string; icon: typeof Clock }[] = [
   { id: 'morning', label: 'Morning', icon: Coffee },
@@ -377,6 +377,18 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
             }`}
         >
           <Keyboard size={15} strokeWidth={1.5} />
+        </button>
+        <button
+          onClick={() => setView('about')}
+          aria-label="About Axon"
+          className={`p-2 rounded-lg transition-colors
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
+            ${activeView === 'about'
+              ? 'bg-white/5 text-[var(--ax-text-on-dark)]'
+              : 'text-[var(--ax-text-on-dark-muted)] hover:bg-white/5 hover:text-[var(--ax-text-on-dark)]'
+            }`}
+        >
+          <HelpCircle size={15} strokeWidth={1.5} />
         </button>
         <button
           onClick={toggleTheme}

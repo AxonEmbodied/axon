@@ -13,6 +13,7 @@ import { AgentView } from '@/views/AgentView'
 import { SessionsView } from '@/views/SessionsView'
 import { TodosView } from '@/views/TodosView'
 import { SourceControlView } from '@/views/SourceControlView'
+import { AboutView } from '@/views/AboutView'
 import { useUIStore, type ViewId } from '@/store/uiStore'
 import { useProjectStore } from '@/store/projectStore'
 
@@ -170,6 +171,7 @@ function ViewRouter() {
             {activeView === 'state' && <StateView />}
             {activeView === 'decisions' && <DecisionsView />}
             {activeView === 'onboarding' && <OnboardingView />}
+            {activeView === 'about' && <AboutView />}
           </div>
         </div>
       )}
