@@ -4,7 +4,6 @@ import { useDebugStore } from '@/store/debugStore'
 const STORAGE_KEY = 'axon-intro-seen'
 const PLAYBACK_RATE = 2.5
 const START_PERCENT = 0.50
-const FADE_DELAY_MS = 2000
 const FADE_DURATION_MS = 1500
 
 /** Sample the average color from the video's edge pixels using a canvas */
