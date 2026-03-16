@@ -5,9 +5,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/axonembodied/axon-jarvis"
+    "url": "https://github.com/AxonEmbodied/axon"
   },
-  "homepage": "https://github.com/axonembodied/axon-jarvis#readme",
+  "homepage": "https://github.com/AxonEmbodied/axon#readme",
   "keywords": [
     "ai",
     "developer-tools",
