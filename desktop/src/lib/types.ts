@@ -1,5 +1,6 @@
 export type ProjectStatus = 'active' | 'paused' | 'archived'
 export type EnergyLevel = 'low' | 'medium' | 'high'
+export type MomentumLevel = 'accelerating' | 'steady' | 'decelerating' | 'stalled' | 'blocked' | 'frozen'
 
 export interface Project {
   name: string
@@ -18,9 +19,11 @@ export interface RollupFrontmatter {
   headline?: string
   tags?: string[]
   energy?: EnergyLevel
+  momentum?: MomentumLevel
   commits?: number
   decisions?: number
   openLoops?: number
+  riskItems?: number
   previous?: string
 }
 

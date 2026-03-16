@@ -1,4 +1,4 @@
-import type { RollupEpisode, EnergyLevel } from '@/lib/types'
+import type { RollupEpisode, EnergyLevel, MomentumLevel } from '@/lib/types'
 import { formatDate } from '@/lib/utils'
 import { renderInlineFormatting } from '@/components/shared/InlineMarkdown'
 
@@ -24,19 +24,39 @@ function EnergyDots({ energy }: { energy?: EnergyLevel }) {
   )
 }
 
+function MomentumBadge({ momentum }: { momentum?: MomentumLevel }) {
+  if (!momentum) return null
+  const styles: Record<MomentumLevel, string> = {
+    accelerating: 'text-ax-success bg-ax-success/10',
+    steady: 'text-ax-text-secondary bg-ax-sunken',
+    decelerating: 'text-ax-warning bg-ax-warning/10',
+    stalled: 'text-ax-error bg-ax-error/10',
+    blocked: 'text-ax-error bg-ax-error/10',
+    frozen: 'text-ax-text-tertiary bg-ax-sunken',
+  }
+  return (
+    <span className={`font-mono text-micro px-1.5 py-0.5 rounded-full ${styles[momentum] || styles.steady}`}>
+      {momentum}
+    </span>
+  )
+}
+
 function Metrics({ frontmatter }: { frontmatter: RollupEpisode['frontmatter'] }) {
-  const items: string[] = []
-  if (frontmatter.commits != null) items.push(`${frontmatter.commits} commits`)
-  if (frontmatter.decisions != null) items.push(`${frontmatter.decisions} decisions`)
-  if (frontmatter.openLoops != null) items.push(`${frontmatter.openLoops} open`)
+  const items: { label: string; warn?: boolean }[] = []
+  if (frontmatter.commits != null) items.push({ label: `${frontmatter.commits} commits` })
+  if (frontmatter.decisions != null) items.push({ label: `${frontmatter.decisions} decisions` })
+  if (frontmatter.openLoops != null) items.push({ label: `${frontmatter.openLoops} open` })
+  if (frontmatter.riskItems != null && frontmatter.riskItems > 0) {
+    items.push({ label: `${frontmatter.riskItems} risks`, warn: true })
+  }
   if (items.length === 0) return null
 
   return (
     <div className="font-mono text-small text-ax-text-secondary">
       {items.map((item, i) => (
-        <span key={item}>
+        <span key={item.label}>
           {i > 0 && <span className="mx-2 opacity-40">&middot;</span>}
-          {item}
+          <span className={item.warn ? 'text-ax-warning' : ''}>{item.label}</span>
         </span>
       ))}
     </div>
@@ -76,7 +96,10 @@ export function RollupCard({ rollup, index, onClick }: { rollup: RollupEpisode; 
             {formatDate(frontmatter.date)}
           </time>
         </div>
-        <EnergyDots energy={frontmatter.energy} />
+        <div className="flex items-center gap-2">
+          <MomentumBadge momentum={frontmatter.momentum} />
+          <EnergyDots energy={frontmatter.energy} />
+        </div>
       </div>
 
       {/* Headline */}

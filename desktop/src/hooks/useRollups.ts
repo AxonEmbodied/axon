@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { parseFrontmatter, extractSummary } from '@/lib/parser'
+import { parseFrontmatter, extractSummary, normalizeRollupFrontmatter } from '@/lib/parser'
 import { useBackend } from '@/providers/DataProvider'
 import type { RollupEpisode, RollupFrontmatter } from '@/lib/types'
 
@@ -24,12 +24,13 @@ export function useRollups(project: string | null) {
         const parsed = raw.map(r => {
           const result = parseFrontmatter<RollupFrontmatter>(r.content)
           if (result.ok && result.data) {
+            const normalized = normalizeRollupFrontmatter({
+              type: 'rollup', date: '', project,
+              ...result.data.frontmatter as Record<string, unknown>,
+            })
             return {
               filename: r.filename,
-              frontmatter: {
-                ...{ type: 'rollup' as const, date: '', project },
-                ...result.data.frontmatter,
-              },
+              frontmatter: normalized,
               summary: extractSummary(result.data.body),
               body: result.data.body,
             } satisfies RollupEpisode

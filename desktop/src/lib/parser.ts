@@ -1,9 +1,65 @@
 import { parse as parseYaml } from 'yaml'
+import type { RollupFrontmatter, EnergyLevel, MomentumLevel } from './types'
 
 export interface ParseResult<T> {
   ok: boolean
   data?: T
   error?: string
+}
+
+// ─── Frontmatter Normalization ──────────────────────────────────
+// LLM output is inconsistent: snake_case vs camelCase, emoji vs words.
+// This normalizer maps everything to the canonical RollupFrontmatter shape.
+
+const SNAKE_TO_CAMEL: Record<string, string> = {
+  open_loops: 'openLoops',
+  risk_items: 'riskItems',
+  // These are already camelCase but listing for completeness:
+  openLoops: 'openLoops',
+  riskItems: 'riskItems',
+}
+
+const ENERGY_NORMALIZE: Record<string, EnergyLevel> = {
+  high: 'high', medium: 'medium', low: 'low',
+  '🟢': 'high', '🟡': 'medium', '🔴': 'low',
+  '🔥': 'high', '⚡': 'high',
+}
+
+const MOMENTUM_NORMALIZE: Record<string, MomentumLevel> = {
+  accelerating: 'accelerating', steady: 'steady', decelerating: 'decelerating',
+  stalled: 'stalled', blocked: 'blocked', frozen: 'frozen',
+  cruising: 'steady', stalling: 'decelerating',
+}
+
+export function normalizeRollupFrontmatter(raw: Record<string, unknown>): RollupFrontmatter {
+  const out: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(raw)) {
+    const camelKey = SNAKE_TO_CAMEL[key] || key
+    out[camelKey] = value
+  }
+
+  // Normalize energy
+  if (out.energy != null) {
+    const e = String(out.energy).toLowerCase().trim()
+    out.energy = ENERGY_NORMALIZE[e] || ENERGY_NORMALIZE[String(out.energy)] || undefined
+  }
+
+  // Normalize momentum
+  if (out.momentum != null) {
+    const m = String(out.momentum).toLowerCase().trim()
+    out.momentum = MOMENTUM_NORMALIZE[m] || undefined
+  }
+
+  // Ensure numeric fields are numbers
+  for (const field of ['commits', 'decisions', 'openLoops', 'riskItems']) {
+    if (out[field] != null) {
+      const n = Number(out[field])
+      out[field] = isNaN(n) ? undefined : n
+    }
+  }
+
+  return out as RollupFrontmatter
 }
 
 export function parseFrontmatter<T = Record<string, unknown>>(content: string): ParseResult<{ frontmatter: T; body: string }> {

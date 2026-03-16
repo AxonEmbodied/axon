@@ -204,7 +204,7 @@ $USER_CONTEXT_BLOCK
 ## Task
 Produce today's rollup. Start with YAML frontmatter, then markdown sections.
 
-### YAML Frontmatter (REQUIRED)
+### YAML Frontmatter (REQUIRED — use EXACTLY these field names, no snake_case alternatives)
 \`\`\`
 ---
 type: rollup
@@ -212,18 +212,18 @@ date: $TODAY
 project: $PROJECT
 headline: \"<one punchy line summarizing the day — max 80 chars>\"
 tags: [<2-4 from: shipping, hardening, testing, bugfix, architecture, blocked, concurrency, compliance, refactor, docs>]
-energy: <high|medium|low — based on commit velocity and scope of changes>
-momentum: <accelerating|steady|decelerating — compared to recent days>
-commits: <number>
-decisions: <number of decision traces>
-open_loops: <number of unfinished items>
-risk_items: <number of items flagged as risky>
+energy: <high|medium|low — ONLY these three words, no emoji, no other values>
+momentum: <accelerating|steady|decelerating — ONLY these three words>
+commits: <integer>
+decisions: <integer — number of decision traces>
+openLoops: <integer — number of unfinished items>
+riskItems: <integer — number of items flagged as risky>
 ---
 \`\`\`
 
 ### Sections
 1. **Summary** — 2-3 sentences, specific numbers and names
-2. **Momentum** — one paragraph: is this project accelerating, steady, or decelerating? Compare today's output to recent rollups. Note velocity changes, scope shifts, or signs of being stuck. Be honest — "you shipped 3 features but none have tests" is useful. End with a directional word: accelerating, cruising, stalling, or blocked.
+2. **Momentum** — one paragraph: is this project accelerating, steady, or decelerating? Compare today's output to recent rollups. Note velocity changes, scope shifts, or signs of being stuck. Be honest — "you shipped 3 features but none have tests" is useful. End with one of: **accelerating**, **steady**, or **decelerating** (must match the frontmatter value).
 3. **Key Decisions** — use the Decision Trace format. Number each decision with a globally unique ID: DT-YYYYMMDD-N where YYYYMMDD is today's date ($TODAY without dashes) and N is a sequential number starting at 1. For example: DT-$(date +%Y%m%d)-1, DT-$(date +%Y%m%d)-2, etc.
    - **Input:** what triggered the decision
    - **Constraint:** what limited the options
