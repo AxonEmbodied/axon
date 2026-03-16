@@ -75,7 +75,7 @@ export function GenesisProgressView() {
           {/* Description */}
           {status === 'running' && (
             <p className="text-small text-ax-text-secondary mb-6">
-              Axon is reading your project's history and composing its genesis rollup. This usually takes 1–2 minutes.
+              Axon is reading your project's history and composing its genesis rollup. For large repos this can take a few minutes — go grab a coffee and come back.
             </p>
           )}
 

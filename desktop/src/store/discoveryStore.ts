@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { DiscoveredRepo } from '@/lib/types'
 import { useProjectStore } from './projectStore'
+import { useUIStore } from './uiStore'
 
 interface DiscoveryStore {
   repos: DiscoveredRepo[]
@@ -50,6 +51,8 @@ export const useDiscoveryStore = create<DiscoveryStore>((set, get) => ({
         const projects = await projRes.json()
         useProjectStore.getState().setProjects(projects)
         useProjectStore.getState().setActiveProject(repo.name)
+        // Navigate to genesis progress view (not onboarding)
+        useUIStore.getState().setView('genesis-progress')
       }
     } catch (e) {
       console.error('Failed to init repo:', e)

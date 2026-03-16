@@ -66,14 +66,14 @@ export function OnboardingView() {
   }, [])
 
   // Resume genesis for existing project that hasn't completed it
+  // (but NOT if genesis is already running in the background via quick-init)
   const resumeChecked = useRef(false)
   useEffect(() => {
     if (resumeChecked.current) return
     if (!activeProject) return
     const proj = projects.find(p => p.name === activeProject)
-    if (proj && proj.episodeCount === 0 && proj.path) {
+    if (proj && proj.episodeCount === 0 && proj.path && proj.genesisStatus !== 'running') {
       resumeChecked.current = true
-      // Project exists but genesis never completed — skip to genesis step
       setSelectedRepo({
         name: proj.name,
         path: proj.path,
@@ -180,20 +180,22 @@ function StepIndicator({ current }: { current: OnboardingStep }) {
   const currentIdx = STEPS.findIndex(s => s.id === current)
 
   // Sliding window: show current step centered with neighbors
-  // Each step+connector is ~150px wide, we shift the strip so current is centered
-  const STEP_WIDTH = 150
+  const STEP_WIDTH = 170
   const shiftPx = currentIdx * STEP_WIDTH
 
   return (
-    <div className="relative mb-10 overflow-hidden">
+    <div className="relative mb-10" style={{ overflow: 'clip', padding: '8px 0' }}>
       {/* Fade edges */}
-      <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-ax-base to-transparent z-10 pointer-events-none" />
-      <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-ax-base to-transparent z-10 pointer-events-none" />
+      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-ax-base to-transparent z-10 pointer-events-none" />
+      <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-ax-base to-transparent z-10 pointer-events-none" />
 
       {/* Sliding strip */}
       <div
-        className="flex items-center transition-transform duration-500 ease-out px-12"
-        style={{ transform: `translateX(calc(50% - ${shiftPx + STEP_WIDTH / 2}px))` }}
+        className="flex items-center px-16"
+        style={{
+          transform: `translateX(calc(50% - ${shiftPx + STEP_WIDTH / 2}px))`,
+          transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
       >
         {STEPS.map((s, i) => {
           const isComplete = i < currentIdx
@@ -206,50 +208,74 @@ function StepIndicator({ current }: { current: OnboardingStep }) {
               className="flex items-center shrink-0"
               style={{
                 width: i < STEPS.length - 1 ? STEP_WIDTH : undefined,
-                opacity: distance <= 1 ? 1 : distance <= 2 ? 0.4 : 0.15,
-                transition: 'opacity 400ms ease-out',
+                opacity: distance === 0 ? 1 : distance === 1 ? 0.7 : distance === 2 ? 0.3 : 0.1,
+                transition: 'opacity 500ms ease-out',
               }}
             >
               {/* Step node */}
-              <div className="flex items-center gap-2 shrink-0">
-                <div className={`
-                  relative w-6 h-6 rounded-full flex items-center justify-center
-                  transition-all duration-400 ease-out
-                  ${isComplete
-                    ? 'bg-ax-accent text-white scale-90'
-                    : isCurrent
-                      ? 'bg-ax-brand text-white scale-110 shadow-[0_0_0_4px_rgba(200,149,108,0.15)]'
-                      : 'bg-ax-sunken text-ax-text-ghost'
-                  }
-                `}>
+              <div className="flex items-center gap-2.5 shrink-0">
+                <div
+                  className="relative flex items-center justify-center"
+                  style={{
+                    width: isCurrent ? 30 : 24,
+                    height: isCurrent ? 30 : 24,
+                    borderRadius: '50%',
+                    transition: 'all 500ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    background: isComplete
+                      ? 'var(--ax-accent)'
+                      : isCurrent
+                        ? 'var(--ax-brand-primary)'
+                        : 'var(--ax-bg-sunken)',
+                    color: isComplete || isCurrent ? 'white' : 'var(--ax-text-ghost)',
+                    boxShadow: isCurrent
+                      ? '0 0 0 5px rgba(200,149,108,0.12), 0 0 20px rgba(200,149,108,0.15)'
+                      : 'none',
+                  }}
+                >
                   {isComplete ? (
-                    <Check size={10} strokeWidth={2.5} />
+                    <Check size={11} strokeWidth={3} />
                   ) : (
-                    <span className="font-mono text-[10px] font-medium">{s.num}</span>
+                    <span className="font-mono font-semibold" style={{ fontSize: isCurrent ? 11 : 10 }}>{s.num}</span>
                   )}
                   {isCurrent && (
-                    <div className="absolute inset-0 rounded-full animate-ping-slow bg-ax-brand/20" />
+                    <div
+                      className="absolute rounded-full"
+                      style={{
+                        inset: -3,
+                        border: '1.5px solid var(--ax-brand-primary)',
+                        opacity: 0.3,
+                        animation: 'onboardingPulse 2s ease-in-out infinite',
+                      }}
+                    />
                   )}
                 </div>
-                <span className={`
-                  font-mono text-micro transition-all duration-300 whitespace-nowrap
-                  ${isComplete
-                    ? 'text-ax-accent font-medium'
-                    : isCurrent
-                      ? 'text-ax-text-primary font-medium'
-                      : 'text-ax-text-ghost'
-                  }
-                `}>
+                <span
+                  className="font-mono whitespace-nowrap"
+                  style={{
+                    fontSize: isCurrent ? 12 : 11,
+                    fontWeight: isCurrent || isComplete ? 600 : 400,
+                    color: isComplete
+                      ? 'var(--ax-accent)'
+                      : isCurrent
+                        ? 'var(--ax-text-primary)'
+                        : 'var(--ax-text-ghost)',
+                    transition: 'all 400ms ease-out',
+                    letterSpacing: '0.02em',
+                  }}
+                >
                   {s.label}
                 </span>
               </div>
               {/* Connector line */}
               {i < STEPS.length - 1 && (
-                <div className="flex-1 mx-3 h-[2px] rounded-full overflow-hidden bg-ax-sunken min-w-4">
+                <div className="flex-1 rounded-full overflow-hidden min-w-6" style={{ height: 2, margin: '0 14px', background: 'var(--ax-bg-sunken)' }}>
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ease-out ${
-                      i < currentIdx ? 'w-full bg-ax-accent' : 'w-0 bg-ax-brand'
-                    }`}
+                    className="h-full rounded-full"
+                    style={{
+                      width: i < currentIdx ? '100%' : '0%',
+                      background: 'var(--ax-accent)',
+                      transition: 'width 600ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    }}
                   />
                 </div>
               )}
@@ -1062,6 +1088,11 @@ function GenesisProgress({ repo, userContext, onComplete }: {
         <p className="text-small text-ax-text-secondary">
           {config.detail}
         </p>
+        {phase !== 'done' && (
+          <p className="text-micro text-ax-text-tertiary mt-2 italic">
+            This can take a few minutes for large repos — grab a coffee.
+          </p>
+        )}
 
         {/* Progress bar */}
         <div className="flex gap-1 mt-4">
