@@ -4,7 +4,7 @@ import { useProjects } from '@/hooks/useProjects'
 import { useProjectStore } from '@/store/projectStore'
 import { useUIStore, type ViewId } from '@/store/uiStore'
 import { useDebugStore } from '@/store/debugStore'
-import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, ChevronRight, Archive, GitBranch, GripVertical, HelpCircle, X } from 'lucide-react'
+import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, GitBranch, GripVertical, HelpCircle, X } from 'lucide-react'
 
 const HINT_STORAGE_KEY = 'axon-shortcut-hints-dismissed'
 const HINT_DURATION_MS = 4000
@@ -244,12 +244,27 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
       {/* Project Switcher */}
       {!collapsed && (<>
         <div className="px-3 pb-3 mx-2 pt-3 rounded-xl bg-white/[0.03]" role="group" aria-label="Project switcher">
-          <div className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)] px-2 mb-2" aria-hidden="true">
-            Projects
+          <div className="flex items-center justify-between px-2 mb-2">
+            <span className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)]">
+              Projects
+            </span>
+            {archivedProjects.length > 0 && (
+              <button
+                onClick={() => setShowArchived(v => !v)}
+                className={`font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded transition-colors
+                  ${showArchived
+                    ? 'text-[var(--ax-text-on-dark)] bg-white/10'
+                    : 'text-[var(--ax-text-on-dark-muted)] hover:text-[var(--ax-text-on-dark)]'
+                  }`}
+              >
+                {showArchived ? 'All' : 'Active'}
+              </button>
+            )}
           </div>
           <div ref={listRef} className="overflow-y-auto max-h-[40vh]">
-          {(dragIdx !== null && dragThreshold.current ? getDragOrder() : activeProjects).map((p, _i) => {
+          {(dragIdx !== null && dragThreshold.current ? getDragOrder() : (showArchived ? [...activeProjects, ...archivedProjects] : activeProjects)).map((p, _i) => {
             const isToday = p.lastRollup === today
+            const isArchived = p.status === 'archived'
             const isDragging = dragIdx !== null && dragThreshold.current
             const isDraggedItem = isDragging && overIdx !== null &&
               p.name === activeProjects[dragIdx!]?.name
@@ -263,21 +278,22 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
                     showHint(['⌘', '↑', '↓'], 'to switch projects', e.currentTarget)
                   }
                 }}
-                onPointerDown={(e) => handlePointerDown(e, activeProjects.findIndex(ap => ap.name === p.name))}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                aria-label={`Switch to ${p.name}${p.openLoopCount > 0 ? `, ${p.openLoopCount} open loops` : ''}`}
+                onPointerDown={isArchived ? undefined : (e) => handlePointerDown(e, activeProjects.findIndex(ap => ap.name === p.name))}
+                onPointerMove={isArchived ? undefined : handlePointerMove}
+                onPointerUp={isArchived ? undefined : handlePointerUp}
+                aria-label={`Switch to ${p.name}${isArchived ? ' (archived)' : ''}${p.openLoopCount > 0 ? `, ${p.openLoopCount} open loops` : ''}`}
                 aria-pressed={activeProject === p.name}
                 className={`w-full text-left px-3 py-1.5 rounded-lg mb-0.5 flex items-center gap-2.5 transition-all duration-150 select-none group
                   focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
                   ${isDraggedItem ? 'bg-white/15 shadow-lg scale-[1.02]' : ''}
+                  ${isArchived ? 'opacity-50 hover:opacity-70' : ''}
                   ${activeProject === p.name
                     ? 'bg-white/10 text-[var(--ax-text-on-dark)] border-l-2 border-l-[var(--ax-brand-primary)]'
                     : 'text-[var(--ax-text-on-dark-muted)] hover:bg-white/5 hover:text-[var(--ax-text-on-dark)] border-l-2 border-l-transparent'
                   }`}
                 style={{ cursor: isDragging ? 'grabbing' : undefined }}
               >
-                <GripVertical size={10} className="shrink-0 opacity-0 group-hover:opacity-30 transition-opacity" aria-hidden="true" />
+                {!isArchived && <GripVertical size={10} className="shrink-0 opacity-0 group-hover:opacity-30 transition-opacity" aria-hidden="true" />}
                 <span className={`w-2 h-2 rounded-full shrink-0 ${
                   p.status === 'active' ? 'bg-ax-accent' :
                   p.status === 'paused' ? 'bg-ax-warning' : 'bg-ax-text-tertiary'
@@ -292,38 +308,6 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
             )
           })}
           </div>
-
-          {/* Archived projects — collapsible */}
-          {archivedProjects.length > 0 && (
-            <>
-              <button
-                onClick={() => setShowArchived(v => !v)}
-                className="w-full text-left px-3 py-1.5 mt-1 flex items-center gap-2 text-[var(--ax-text-on-dark-muted)] hover:text-[var(--ax-text-on-dark)] transition-colors
-                  focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)] rounded-lg"
-              >
-                <ChevronRight size={12} className={`transition-transform duration-200 ${showArchived ? 'rotate-90' : ''}`} />
-                <Archive size={12} strokeWidth={1.5} />
-                <span className="font-mono text-micro uppercase tracking-wider">Archived ({archivedProjects.length})</span>
-              </button>
-              {showArchived && archivedProjects.map((p) => (
-                <button
-                  key={p.name}
-                  onClick={() => setActiveProject(p.name)}
-                  aria-label={`Switch to archived project ${p.name}`}
-                  aria-pressed={activeProject === p.name}
-                  className={`w-full text-left px-3 py-2 rounded-lg mb-0.5 flex items-center gap-3 transition-all duration-150
-                    focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ax-brand-primary)]
-                    ${activeProject === p.name
-                      ? 'bg-white/10 text-[var(--ax-text-on-dark)] border-l-2 border-l-[var(--ax-brand-primary)]'
-                      : 'text-[var(--ax-text-on-dark-muted)] opacity-50 hover:opacity-70 hover:bg-white/5 border-l-2 border-l-transparent'
-                    }`}
-                >
-                  <span className="w-2 h-2 rounded-full shrink-0 bg-ax-text-tertiary" aria-hidden="true" />
-                  <span className="font-mono text-small truncate">{p.name}</span>
-                </button>
-              ))}
-            </>
-          )}
 
           <button
             onClick={() => setView('onboarding')}
