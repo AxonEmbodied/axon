@@ -1087,6 +1087,23 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
           .filter(d => existsSync(d))
 
         const repos: { name: string; path: string; remote: string; commitCount: number; lastActivity: string }[] = []
+        const seen = new Set<string>()
+
+        const addRepo = (repoPath: string, name: string) => {
+          if (seen.has(repoPath)) return
+          seen.add(repoPath)
+
+          let remote = ''
+          try { remote = execSync(`git -C "${repoPath}" remote get-url origin 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+
+          let commitCount = 0
+          try { commitCount = parseInt(execSync(`git -C "${repoPath}" rev-list --count HEAD 2>/dev/null`, { encoding: 'utf-8' }).trim(), 10) || 0 } catch {}
+
+          let lastActivity = ''
+          try { lastActivity = execSync(`git -C "${repoPath}" log -1 --format=%ai 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+
+          repos.push({ name, path: repoPath, remote, commitCount, lastActivity })
+        }
 
         for (const dir of scanDirs) {
           let entries: import('fs').Dirent[]
@@ -1097,19 +1114,24 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
           }
           for (const entry of entries) {
             if (!entry.isDirectory()) continue
-            const repoPath = join(dir, entry.name)
-            if (!existsSync(join(repoPath, '.git'))) continue
+            const childPath = join(dir, entry.name)
 
-            let remote = ''
-            try { remote = execSync(`git -C "${repoPath}" remote get-url origin 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
-
-            let commitCount = 0
-            try { commitCount = parseInt(execSync(`git -C "${repoPath}" rev-list --count HEAD 2>/dev/null`, { encoding: 'utf-8' }).trim(), 10) || 0 } catch {}
-
-            let lastActivity = ''
-            try { lastActivity = execSync(`git -C "${repoPath}" log -1 --format=%ai 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
-
-            repos.push({ name: entry.name, path: repoPath, remote, commitCount, lastActivity })
+            if (existsSync(join(childPath, '.git'))) {
+              // Direct git repo
+              addRepo(childPath, entry.name)
+            } else {
+              // Not a git repo — check one level deeper (org folders like eat-ai-org/)
+              try {
+                const subEntries = await readdir(childPath, { withFileTypes: true })
+                for (const sub of subEntries) {
+                  if (!sub.isDirectory()) continue
+                  const subPath = join(childPath, sub.name)
+                  if (existsSync(join(subPath, '.git'))) {
+                    addRepo(subPath, sub.name)
+                  }
+                }
+              } catch {}
+            }
           }
         }
 
