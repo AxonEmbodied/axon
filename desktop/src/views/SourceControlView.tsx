@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/projectStore'
-import { GitBranch, ArrowUp, ArrowDown, ChevronDown, Loader2, Check, AlertTriangle, Copy, GitCommit } from 'lucide-react'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { GitBranch, ArrowUp, ArrowDown, ChevronDown, Loader2, Check, AlertTriangle, Copy, GitCommit, Tag, Rocket } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -31,6 +31,13 @@ interface GitBranchEntry {
   shortSha: string
 }
 
+interface GitTag {
+  name: string
+  shortSha: string
+  date: string
+  message: string
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────
 
 function relativeTime(dateStr: string): string {
@@ -58,6 +65,7 @@ function useGitData(project: string | null) {
   const [info, setInfo] = useState<GitInfo | null>(null)
   const [commits, setCommits] = useState<GitCommitEntry[]>([])
   const [branches, setBranches] = useState<GitBranchEntry[]>([])
+  const [tags, setTags] = useState<GitTag[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchInfo = useCallback(async () => {
@@ -86,9 +94,18 @@ function useGitData(project: string | null) {
     } catch { setBranches([]) }
   }, [project])
 
+  const fetchTags = useCallback(async () => {
+    if (!project) { setTags([]); return }
+    try {
+      const res = await fetch(`/api/axon/projects/${encodeURIComponent(project)}/git/tags`)
+      const data = await res.json()
+      setTags(data.tags || [])
+    } catch { setTags([]) }
+  }, [project])
+
   const refresh = useCallback(async () => {
-    await Promise.all([fetchInfo(), fetchLog()])
-  }, [fetchInfo, fetchLog])
+    await Promise.all([fetchInfo(), fetchLog(), fetchTags()])
+  }, [fetchInfo, fetchLog, fetchTags])
 
   // Initial load
   useEffect(() => {
@@ -109,7 +126,7 @@ function useGitData(project: string | null) {
     return () => window.removeEventListener('focus', handler)
   }, [refresh])
 
-  return { info, commits, branches, loading, refresh, fetchBranches }
+  return { info, commits, branches, tags, loading, refresh, fetchBranches }
 }
 
 // ─── Action Toast ────────────────────────────────────────────────
@@ -250,7 +267,7 @@ function BranchSwitcher({
 
 // ─── Commit Row ──────────────────────────────────────────────────
 
-function CommitRow({ commit, isLocal }: { commit: GitCommitEntry; isLocal?: boolean }) {
+function CommitRow({ commit, isLocal, tags }: { commit: GitCommitEntry; isLocal?: boolean; tags?: string[] }) {
   const [copied, setCopied] = useState(false)
 
   const copyHash = () => {
@@ -276,6 +293,12 @@ function CommitRow({ commit, isLocal }: { commit: GitCommitEntry; isLocal?: bool
       <span className="text-body text-ax-text-primary truncate flex-1 min-w-0">
         {commit.message}
       </span>
+      {tags && tags.map(t => (
+        <span key={t} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full
+          bg-ax-brand/10 text-ax-brand font-mono text-micro shrink-0">
+          <Tag size={8} /> {t}
+        </span>
+      ))}
       {isLocal && (
         <span className="font-mono text-micro text-[var(--ax-warning)] shrink-0">local</span>
       )}
@@ -286,18 +309,191 @@ function CommitRow({ commit, isLocal }: { commit: GitCommitEntry; isLocal?: bool
   )
 }
 
+// ─── Push + Tag Modal ────────────────────────────────────────────
+
+/** Bump the patch of a semver tag: "v1.2.3" → "v1.2.4", "desktop-v0.1.0" → "desktop-v0.1.1" */
+function nextPatch(tag: string): string {
+  const m = tag.match(/^(.*?)(\d+)\.(\d+)\.(\d+)$/)
+  if (!m) return tag
+  return `${m[1]}${m[2]}.${m[3]}.${Number(m[4]) + 1}`
+}
+
+function nextMinor(tag: string): string {
+  const m = tag.match(/^(.*?)(\d+)\.(\d+)\.(\d+)$/)
+  if (!m) return tag
+  return `${m[1]}${m[2]}.${Number(m[3]) + 1}.0`
+}
+
+interface TagSuggestion {
+  label: string
+  value: string
+  hint: string
+}
+
+function computeTagSuggestions(tags: GitTag[]): TagSuggestion[] {
+  const suggestions: TagSuggestion[] = []
+
+  // Find latest desktop-v* tag → suggest next patch
+  const desktopTag = tags.find(t => /^desktop-v\d+\.\d+\.\d+$/.test(t.name))
+  suggestions.push({
+    label: 'Desktop',
+    value: desktopTag ? nextPatch(desktopTag.name) : 'desktop-v0.1.0',
+    hint: 'Build .dmg',
+  })
+
+  // Find latest v* tag (not desktop-v*) → suggest next patch
+  const releaseTag = tags.find(t => /^v\d+\.\d+\.\d+$/.test(t.name))
+  suggestions.push({
+    label: 'Release',
+    value: releaseTag ? nextPatch(releaseTag.name) : 'v0.1.0',
+    hint: 'npm publish',
+  })
+
+  return suggestions
+}
+
+function PushModal({
+  info, tags, tagName, setTagName,
+  tagging, pushing, onPush, onTag, onCancel,
+}: {
+  info: GitInfo
+  tags: GitTag[]
+  tagName: string
+  setTagName: (v: string) => void
+  tagging: boolean
+  pushing: boolean
+  onPush: () => void
+  onTag: () => void
+  onCancel: () => void
+}) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onCancel])
+
+  const suggestions = computeTagSuggestions(tags)
+
+  const tagHint = tagName.startsWith('desktop-v')
+    ? 'Triggers desktop build (.dmg)'
+    : tagName.startsWith('v') && !tagName.startsWith('desktop-v')
+    ? 'Triggers npm publish'
+    : null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-ax-elevated rounded-xl border border-ax-border p-6 max-w-md w-full mx-4 shadow-xl animate-fade-in-up"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-serif italic text-h3 text-ax-text-primary mb-1">Push to remote</h3>
+        <p className="text-small text-ax-text-secondary mb-5">
+          {info.ahead} commit{info.ahead !== 1 ? 's' : ''} to {info.hasUpstream ? 'upstream' : `origin/${info.branch}`}
+        </p>
+
+        {/* Push button */}
+        <button
+          onClick={onPush}
+          disabled={pushing}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
+            font-mono text-small text-white
+            bg-ax-brand hover:bg-ax-brand-hover transition-colors
+            disabled:opacity-50"
+        >
+          {pushing ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={14} />}
+          Push {info.ahead} commit{info.ahead !== 1 ? 's' : ''}
+        </button>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-ax-border-subtle" />
+          <span className="text-micro text-ax-text-ghost font-mono">or tag & push</span>
+          <div className="flex-1 h-px bg-ax-border-subtle" />
+        </div>
+
+        {/* Tag suggestions */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {suggestions.map(s => (
+            <button
+              key={s.value}
+              onClick={() => setTagName(s.value)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg
+                font-mono text-micro transition-colors border
+                ${tagName === s.value
+                  ? 'border-ax-brand bg-ax-brand/10 text-ax-brand'
+                  : 'border-ax-border-subtle bg-ax-sunken text-ax-text-secondary hover:border-ax-brand/50 hover:text-ax-text-primary'
+                }`}
+            >
+              <Rocket size={9} className={tagName === s.value ? 'text-ax-brand' : 'text-ax-text-ghost'} />
+              {s.value}
+              <span className="text-ax-text-ghost">· {s.hint}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tag form */}
+        <div className="space-y-2">
+          <input
+            value={tagName}
+            onChange={e => setTagName(e.target.value)}
+            placeholder="Or type a custom tag..."
+            className="w-full bg-ax-sunken text-small text-ax-text-primary font-mono
+              px-3 py-2 rounded-lg border border-ax-border-subtle
+              outline-none focus:border-ax-brand
+              placeholder:text-ax-text-ghost"
+            onKeyDown={e => { if (e.key === 'Enter' && tagName.trim()) onTag() }}
+          />
+          {tagHint && (
+            <p className="text-micro text-ax-text-ghost font-mono flex items-center gap-1.5">
+              <Rocket size={10} className="text-ax-brand" /> {tagHint}
+            </p>
+          )}
+          <button
+            onClick={onTag}
+            disabled={!tagName.trim() || tagging}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
+              font-mono text-small
+              bg-ax-sunken text-ax-text-primary hover:bg-ax-border-subtle
+              border border-ax-border-subtle transition-colors
+              disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {tagging ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+            Create Tag & Push
+          </button>
+        </div>
+
+        {/* Cancel */}
+        <button
+          onClick={onCancel}
+          className="w-full mt-3 px-4 py-2 rounded-lg text-small text-ax-text-tertiary
+            hover:text-ax-text-secondary transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ─── Main View ───────────────────────────────────────────────────
 
 export function SourceControlView() {
   const { activeProject, projects } = useProjectStore()
   const activeProjectData = projects.find(p => p.name === activeProject)
-  const { info, commits, branches, loading, refresh, fetchBranches } = useGitData(activeProject)
+  const { info, commits, branches, tags, loading, refresh, fetchBranches } = useGitData(activeProject)
 
   const [showSwitcher, setShowSwitcher] = useState(false)
   const [pushing, setPushing] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [confirmPush, setConfirmPush] = useState(false)
   const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null)
+  const [showTagForm, setShowTagForm] = useState(false)
+  const [tagName, setTagName] = useState('')
+  const [tagging, setTagging] = useState(false)
 
   // Clear toast after 4s
   useEffect(() => {
@@ -350,9 +546,40 @@ export function SourceControlView() {
     refresh()
   }
 
+  const handleCreateTag = async () => {
+    if (!activeProject || !tagName.trim() || tagging) return
+    setTagging(true)
+    try {
+      const res = await fetch(`/api/axon/projects/${encodeURIComponent(activeProject)}/git/tag`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: tagName.trim(), message: tagName.trim() }),
+      })
+      const result = await res.json()
+      setToast({ message: result.message, ok: result.ok })
+      if (result.ok) {
+        setShowTagForm(false)
+        setTagName('')
+        refresh()
+      }
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : 'Tag failed', ok: false })
+    } finally {
+      setTagging(false)
+    }
+  }
+
   // Local-only commits (not yet pushed)
   const localCommitCount = info?.ahead || 0
   const localHashes = new Set(commits.slice(0, localCommitCount).map(c => c.hash))
+
+  // Map tags to commit short hashes for inline badges
+  const tagsByCommit = new Map<string, string[]>()
+  for (const t of tags) {
+    const existing = tagsByCommit.get(t.shortSha) || []
+    existing.push(t.name)
+    tagsByCommit.set(t.shortSha, existing)
+  }
 
   // Group commits by rollup boundary
   const lastRollupTime = activeProjectData?.lastRollup
@@ -525,7 +752,7 @@ export function SourceControlView() {
             <div className="border-l-2 border-l-[var(--ax-brand)] rounded-lg
               bg-[var(--ax-brand)]/[0.04]"
             >
-              {sinceRollup.map(c => <CommitRow key={c.hash} commit={c} isLocal={localHashes.has(c.hash)} />)}
+              {sinceRollup.map(c => <CommitRow key={c.hash} commit={c} isLocal={localHashes.has(c.hash)} tags={tagsByCommit.get(c.short)} />)}
             </div>
           </div>
 
@@ -536,7 +763,7 @@ export function SourceControlView() {
                 Earlier
               </h2>
               <div className="rounded-lg">
-                {earlier.map(c => <CommitRow key={c.hash} commit={c} isLocal={localHashes.has(c.hash)} />)}
+                {earlier.map(c => <CommitRow key={c.hash} commit={c} isLocal={localHashes.has(c.hash)} tags={tagsByCommit.get(c.short)} />)}
               </div>
             </div>
           )}
@@ -548,24 +775,50 @@ export function SourceControlView() {
             Recent commits
           </h2>
           <div className="rounded-lg">
-            {commits.map(c => <CommitRow key={c.hash} commit={c} isLocal={localHashes.has(c.hash)} />)}
+            {commits.map(c => <CommitRow key={c.hash} commit={c} isLocal={localHashes.has(c.hash)} tags={tagsByCommit.get(c.short)} />)}
           </div>
         </div>
       )}
 
-      {/* Push confirmation */}
+      {/* Tags — compact list if any exist */}
+      {tags.length > 0 && (
+        <div>
+          <h2 className="font-mono text-micro text-ax-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
+            <Tag size={13} /> Tags
+            <span className="text-ax-text-ghost">{tags.length}</span>
+          </h2>
+          <div className="bg-ax-elevated rounded-xl border border-ax-border py-1">
+            {tags.slice(0, 6).map(t => (
+              <div key={t.name} className="flex items-center gap-3 px-3 py-2 rounded-lg
+                hover:bg-ax-sunken transition-colors"
+              >
+                <Tag size={12} className="text-ax-brand shrink-0" />
+                <span className="font-mono text-body text-ax-text-primary font-medium">{t.name}</span>
+                <span className="font-mono text-micro text-ax-text-ghost">{t.shortSha}</span>
+                {t.message && (
+                  <span className="text-small text-ax-text-secondary truncate flex-1 min-w-0">{t.message}</span>
+                )}
+                <span className="font-mono text-micro text-ax-text-ghost shrink-0">
+                  {relativeTime(t.date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Push + Tag modal */}
       {confirmPush && info && (
-        <ConfirmDialog
-          title="Push to remote"
-          message={`Push ${info.ahead} commit${info.ahead !== 1 ? 's' : ''} to ${info.hasUpstream ? 'upstream' : `origin/${info.branch}`}?`}
-          options={[
-            { label: `Push ${info.ahead} commit${info.ahead !== 1 ? 's' : ''}`, value: 'push' },
-          ]}
-          onSelect={(v) => {
-            setConfirmPush(false)
-            if (v === 'push') handlePush()
-          }}
-          onCancel={() => setConfirmPush(false)}
+        <PushModal
+          info={info}
+          tags={tags}
+          tagName={tagName}
+          setTagName={setTagName}
+          tagging={tagging}
+          pushing={pushing}
+          onPush={() => { setConfirmPush(false); handlePush() }}
+          onTag={() => handleCreateTag().then(() => setConfirmPush(false))}
+          onCancel={() => { setConfirmPush(false); setTagName('') }}
         />
       )}
     </div>

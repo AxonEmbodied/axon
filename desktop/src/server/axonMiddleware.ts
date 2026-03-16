@@ -1194,6 +1194,75 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         return
       }
 
+      // GET /api/axon/projects/:name/git/tags
+      const gitTagsMatch = url.match(/^\/api\/axon\/projects\/([^/?]+)\/git\/tags$/)
+      if (gitTagsMatch) {
+        const project = decodeURIComponent(gitTagsMatch[1])
+        let cwd = process.cwd()
+        try {
+          const cfg = await readFile(join(AXON_HOME, 'workspaces', project, 'config.yaml'), 'utf-8')
+          const pp = cfg.match(/^project_path:\s*(.+)$/m)?.[1]?.trim()
+          if (pp && existsSync(pp)) cwd = pp
+        } catch { /* fallback */ }
+
+        try {
+          // Get tags with date and commit, sorted newest first
+          const raw = execSync(
+            'git tag --sort=-creatordate --format="%(refname:short)|%(objectname:short)|%(creatordate:iso-strict)|%(subject)"',
+            { cwd, encoding: 'utf-8', stdio: 'pipe' }
+          ).trim()
+          const tags = raw ? raw.split('\n').map(line => {
+            const [name, shortSha, date, ...msgParts] = line.split('|')
+            return { name, shortSha, date, message: msgParts.join('|') }
+          }) : []
+          res.end(JSON.stringify({ tags }))
+        } catch {
+          res.end(JSON.stringify({ tags: [] }))
+        }
+        return
+      }
+
+      // POST /api/axon/projects/:name/git/tag — create and push a tag
+      const gitTagCreateMatch = url.match(/^\/api\/axon\/projects\/([^/?]+)\/git\/tag$/)
+      if (gitTagCreateMatch && req.method === 'POST') {
+        const project = decodeURIComponent(gitTagCreateMatch[1])
+        const body = await new Promise<string>((resolve) => {
+          let data = ''
+          req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+          req.on('end', () => resolve(data))
+        })
+        const { name, message } = JSON.parse(body) as { name: string; message?: string }
+
+        if (!name || !/^[a-zA-Z0-9._\-/]+$/.test(name)) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ ok: false, message: 'Invalid tag name' }))
+          return
+        }
+
+        let cwd = process.cwd()
+        try {
+          const cfg = await readFile(join(AXON_HOME, 'workspaces', project, 'config.yaml'), 'utf-8')
+          const pp = cfg.match(/^project_path:\s*(.+)$/m)?.[1]?.trim()
+          if (pp && existsSync(pp)) cwd = pp
+        } catch { /* fallback */ }
+
+        try {
+          // Create tag
+          const tagCmd = message
+            ? `git tag -a "${name}" -m "${message.replace(/"/g, '\\"')}"`
+            : `git tag "${name}"`
+          execSync(tagCmd, { cwd, encoding: 'utf-8', stdio: 'pipe' })
+
+          // Push tag
+          execSync(`git push origin "${name}" 2>&1`, { cwd, encoding: 'utf-8', timeout: 30000 })
+          res.end(JSON.stringify({ ok: true, message: `Tag ${name} created and pushed` }))
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? (err as { stderr?: string }).stderr || err.message : String(err)
+          res.end(JSON.stringify({ ok: false, message: msg }))
+        }
+        return
+      }
+
       // POST /api/axon/projects/:name/git/push
       const gitPushMatch = url.match(/^\/api\/axon\/projects\/([^/?]+)\/git\/push$/)
       if (gitPushMatch && req.method === 'POST') {
