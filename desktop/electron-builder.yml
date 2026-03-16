@@ -9,7 +9,9 @@ files:
   - "!node_modules/**/{CHANGELOG.md,README.md,readme.md,LICENSE,license}"
   - "!node_modules/**/*.{ts,map}"
 asar: true
+icon: build/icon.png
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg

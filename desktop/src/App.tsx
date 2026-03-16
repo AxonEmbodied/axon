@@ -14,6 +14,7 @@ import { SessionsView } from '@/views/SessionsView'
 import { TodosView } from '@/views/TodosView'
 import { SourceControlView } from '@/views/SourceControlView'
 import { AboutView } from '@/views/AboutView'
+import { IntroSplash } from '@/components/shared/IntroSplash'
 import { useUIStore, type ViewId } from '@/store/uiStore'
 import { useProjectStore } from '@/store/projectStore'
 
@@ -185,6 +186,7 @@ export default function App() {
       <Shell>
         <ViewRouter />
       </Shell>
+      <IntroSplash />
     </DataProvider>
   )
 }
