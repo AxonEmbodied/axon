@@ -165,7 +165,7 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
 
       {/* Project Switcher */}
       {!collapsed && (
-        <div className="px-3 pb-6" role="group" aria-label="Project switcher">
+        <div className="px-3 pb-16" role="group" aria-label="Project switcher">
           <div className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)] px-2 mb-2" aria-hidden="true">
             Projects
           </div>
@@ -274,8 +274,8 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
         </div>
       )}
 
-      {/* Navigation — anchored at bottom */}
-      <nav className={`${collapsed ? 'px-1' : 'px-3'} pb-2`} aria-label="Main views">
+      {/* Navigation */}
+      <nav className={`${collapsed ? 'px-1' : 'px-3'} pt-4 pb-2`} aria-label="Main views">
         {!collapsed && (
           <div className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)] px-2 mb-1" aria-hidden="true">
             Views
