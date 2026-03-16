@@ -160,9 +160,12 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
         )}
       </div>
 
-      {/* Project Switcher — flex-1 to fill middle, centered content */}
+      {/* Middle section — projects + views centered together */}
+      <div className="flex-1 flex flex-col justify-center min-h-0 py-4">
+
+      {/* Project Switcher */}
       {!collapsed && (
-        <div className="flex-1 flex flex-col justify-center px-3 py-4 min-h-0" role="group" aria-label="Project switcher">
+        <div className="px-3 pb-6" role="group" aria-label="Project switcher">
           <div className="text-micro font-mono uppercase tracking-widest text-[var(--ax-text-on-dark-muted)] px-2 mb-2" aria-hidden="true">
             Projects
           </div>
@@ -249,7 +252,6 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
               ))}
             </>
           )}
-        </div>
 
           {/* Project dots */}
           {projects.filter(p => p.status === 'active').length > 1 && (
@@ -330,6 +332,8 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
           )
         })}
       </nav>
+
+      </div>{/* end middle section */}
 
       {/* Footer — horizontal row */}
       <div className={`${collapsed ? 'px-1 flex flex-col items-center gap-1' : 'px-3 flex items-center justify-center gap-1'} pb-4 relative`}>
