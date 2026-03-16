@@ -1,7 +1,7 @@
 {
   "name": "axon-desktop",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.11",
   "description": "Axon developer memory system — desktop app",
   "author": "Axon Embodied",
   "repository": {

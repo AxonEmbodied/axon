@@ -6,6 +6,7 @@ import { useUIStore, type ViewId } from '@/store/uiStore'
 import { useDebugStore } from '@/store/debugStore'
 import { useDiscoveredRepos } from '@/hooks/useDiscoveredRepos'
 import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, GitBranch, GripVertical, HelpCircle, X } from 'lucide-react'
+import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 
 const HINT_STORAGE_KEY = 'axon-shortcut-hints-dismissed'
 const HINT_DURATION_MS = 4000
@@ -36,6 +37,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
   const { projects, activeProject, setActiveProject } = useProjects()
   const { activeView, setView, theme, toggleTheme, sidebarOpen, toggleSidebar } = useUIStore()
+  const { currentVersion, latestVersion, latestUrl, updateAvailable } = useUpdateChecker()
   const today = new Date().toISOString().split('T')[0]
   const collapsed = !sidebarOpen
 
@@ -421,7 +423,47 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
       </div>
 
       {/* Footer — horizontal row */}
-      <div className={`${collapsed ? 'px-1 flex flex-col items-center gap-1' : 'px-3 flex items-center justify-center gap-1'} pb-4 relative`}>
+      <div className={`${collapsed ? 'px-1 flex flex-col items-center gap-1' : 'px-3 flex flex-col items-center gap-1'} pb-4 relative`}>
+        {/* Version badge */}
+        {collapsed ? (
+          <div className="mb-1 flex flex-col items-center gap-1">
+            {updateAvailable && (
+              <a
+                href={latestUrl ?? '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Update available: v${latestVersion}`}
+                className="w-2 h-2 rounded-full bg-[var(--ax-brand-primary)] animate-pulse-dot"
+              />
+            )}
+          </div>
+        ) : (
+          <div className="w-full px-2 mb-1.5">
+            <div className="flex items-center justify-between font-mono text-[9px] text-[var(--ax-text-on-dark-muted)] whitespace-nowrap">
+              <span>v{currentVersion}</span>
+              {latestVersion && (
+                <span className={updateAvailable ? 'text-[var(--ax-brand-primary)]' : ''}>v{latestVersion}</span>
+              )}
+            </div>
+            {updateAvailable && (
+              <a
+                href={latestUrl ?? '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded-md
+                  font-mono text-[10px] whitespace-nowrap text-[var(--ax-text-on-dark)]
+                  bg-[var(--ax-brand-primary)]/15 border border-[var(--ax-brand-primary)]/30
+                  hover:bg-[var(--ax-brand-primary)]/25 hover:border-[var(--ax-brand-primary)]/50
+                  transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--ax-brand-primary)] animate-pulse-dot shrink-0" />
+                Update
+              </a>
+            )}
+          </div>
+        )}
+
+        <div className={`flex items-center ${collapsed ? 'flex-col gap-1' : 'gap-1'}`}>
         {/* Keyboard shortcuts panel */}
         {shortcutsOpen && (
           <div
@@ -493,6 +535,7 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
             : <Sun size={15} strokeWidth={1.5} />
           }
         </button>
+        </div>{/* end buttons row */}
       </div>
 
     </aside>
