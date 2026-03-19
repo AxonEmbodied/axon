@@ -45,7 +45,7 @@ export function startHeartbeat(): void {
   heartbeatInterval = setInterval(cleanStale, 30_000)
 }
 
-export function spawnTerminal(cwd: string, command?: string, sessionId?: string): string {
+export function spawnTerminal(cwd: string, _command?: string, sessionId?: string): string {
   const id = `term-${++counter}-${Date.now()}`
   const shell = process.env.SHELL || '/bin/zsh'
 

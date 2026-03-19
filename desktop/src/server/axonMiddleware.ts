@@ -1861,10 +1861,9 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
           req.on('end', () => resolve(data))
         })
 
-        const { project, sessionId, command } = JSON.parse(body) as {
+        const { project, sessionId } = JSON.parse(body) as {
           project: string
           sessionId?: string
-          command?: string
         }
 
         let cwd = process.cwd()
@@ -1877,7 +1876,7 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         } catch { /* use cwd */ }
 
         try {
-          const terminalId = spawnTerminal(cwd, command, sessionId)
+          const terminalId = spawnTerminal(cwd, undefined, sessionId)
           res.end(JSON.stringify({ terminalId }))
         } catch (err) {
           console.error('[Axon API] Terminal spawn failed:', err)
