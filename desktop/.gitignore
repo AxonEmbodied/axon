@@ -4,3 +4,6 @@ dist-electron/
 release/
 src-tauri/target/
 .vite/
+# CLI scripts copied by CI for Electron bundling
+cli/
+protocol.md

@@ -6,6 +6,8 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - electron/**/*
+  - cli/**/*
+  - protocol.md
   - "!node_modules/**/{CHANGELOG.md,README.md,readme.md,LICENSE,license}"
   - "!node_modules/**/*.{ts,map}"
 asar: false

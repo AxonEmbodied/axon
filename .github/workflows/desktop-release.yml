@@ -21,6 +21,8 @@ jobs:
         run: cd desktop && npm run build
       - name: Build server
         run: cd desktop && npm run build:server
+      - name: Bundle CLI scripts into desktop
+        run: cp -r cli desktop/cli && cp protocol.md desktop/protocol.md && chmod +x desktop/cli/axon*
       - name: Build Electron app
         run: cd desktop && npx electron-builder --mac --publish never
         env:

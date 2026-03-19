@@ -31,29 +31,39 @@ async function start() {
   // Cleanup on exit
   setupCleanupHandlers(httpServer)
 
-  // CLI dir for cron/init scripts — resolve using login shell PATH (not Electron's sandboxed PATH)
+  // CLI dir — check bundled (inside app), then npm global, then sibling
   const homeAxon = join(process.env.HOME || homedir(), '.axon')
   let cliDir
-  try {
+  {
     const { execSync } = await import('child_process')
     const { existsSync } = await import('fs')
 
-    // Resolve login shell PATH for npm root (handles nvm/volta/brew)
-    const shell = process.env.SHELL || '/bin/zsh'
-    const shellName = (shell.split('/').pop() || 'zsh').toLowerCase()
-    let shellPath = process.env.PATH || ''
-    try {
-      const cmd = shellName === 'fish'
-        ? `${shell} -l -c 'printenv PATH'`
-        : `${shell} -lc 'printenv PATH'`
-      shellPath = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }).trim()
-    } catch { /* fall back to process.env.PATH */ }
+    // 1. Bundled CLI (inside packaged Electron app)
+    const bundledCli = join(ROOT, 'cli')
+    if (existsSync(join(bundledCli, 'axon-init'))) {
+      cliDir = bundledCli
+    } else {
+      // 2. npm global install
+      try {
+        const shell = process.env.SHELL || '/bin/zsh'
+        const shellName = (shell.split('/').pop() || 'zsh').toLowerCase()
+        let shellPath = process.env.PATH || ''
+        try {
+          const cmd = shellName === 'fish'
+            ? `${shell} -l -c 'printenv PATH'`
+            : `${shell} -lc 'printenv PATH'`
+          shellPath = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }).trim()
+        } catch { /* fall back */ }
 
-    const npmRoot = execSync('npm root -g', { encoding: 'utf-8', env: { ...process.env, PATH: shellPath }, timeout: 5000 }).trim()
-    const globalCli = join(npmRoot, 'axon-dev', 'cli')
-    cliDir = existsSync(globalCli) ? globalCli : resolve(ROOT, '..', 'cli')
-  } catch {
-    cliDir = resolve(ROOT, '..', 'cli')
+        const npmRoot = execSync('npm root -g', { encoding: 'utf-8', env: { ...process.env, PATH: shellPath }, timeout: 5000 }).trim()
+        const globalCli = join(npmRoot, 'axon-dev', 'cli')
+        cliDir = existsSync(globalCli) ? globalCli : resolve(ROOT, '..', 'cli')
+      } catch {
+        // 3. Sibling directory (dev mode)
+        cliDir = resolve(ROOT, '..', 'cli')
+      }
+    }
+    console.log(`[Axon] CLI dir: ${cliDir}`)
   }
 
   // Mount API middleware
