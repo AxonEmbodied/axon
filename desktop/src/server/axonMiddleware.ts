@@ -2324,7 +2324,7 @@ export function handleAxonUpgrade(
   req: IncomingMessage,
   socket: import('stream').Duplex,
   head: Buffer,
-  axonHome?: string,
+  _axonHome?: string,
 ) {
   const url = new URL(req.url || '', `http://${req.headers.host}`)
   if (url.pathname === '/api/axon/terminal/ws') {
