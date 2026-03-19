@@ -1,5 +1,5 @@
 import { readdir, readFile } from 'fs/promises'
-import { existsSync, writeFileSync, renameSync, mkdirSync, readFileSync, rmSync, watchFile, unwatchFile } from 'fs'
+import { existsSync, writeFileSync, renameSync, mkdirSync, readFileSync, rmSync, watchFile, unwatchFile, realpathSync, statSync, lstatSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { spawn, execSync } from 'child_process'
@@ -98,11 +98,55 @@ export interface AxonMiddlewareConfig {
   cliDir?: string // path to cli/ directory for cron/init scripts
 }
 
+/* ── Resolve user's login shell PATH (handles fish, bash+nvm, zsh) ── */
+
+function resolveShellPath(): string {
+  const fallbackPath = process.env.PATH || ''
+  try {
+    const shell = process.env.SHELL || '/bin/zsh'
+    const shellName = (shell.split('/').pop() || 'zsh').toLowerCase()
+
+    let resolved = ''
+    if (shellName === 'fish') {
+      // fish uses separate -l -c flags (not combined -lc)
+      resolved = execSync(`${shell} -l -c 'printenv PATH'`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }).trim()
+    } else {
+      // bash/zsh: login shell
+      try {
+        resolved = execSync(`${shell} -lc 'printenv PATH'`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }).trim()
+      } catch {
+        // bash with nvm: .bashrc not sourced by login shell, try interactive login
+        resolved = execSync(`${shell} -ilc 'printenv PATH' 2>/dev/null`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }).trim()
+      }
+    }
+
+    // Augment with common tool manager paths that might be missing
+    const home = homedir()
+    const extraPaths = [
+      join(home, '.volta', 'bin'),
+      join(home, '.fnm'),
+      join(home, '.local', 'bin'),
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+    ].filter(p => existsSync(p) && !resolved.includes(p))
+
+    if (extraPaths.length > 0) {
+      resolved = resolved + ':' + extraPaths.join(':')
+    }
+
+    return resolved || fallbackPath
+  } catch {
+    return fallbackPath
+  }
+}
+
 /* ── Create the middleware ── */
 
 export function createAxonMiddleware(config: AxonMiddlewareConfig) {
   const { axonHome: AXON_HOME } = config
   let lastSessionIndex = 0
+  // Resolve shell PATH once at startup — reused by all endpoints
+  const resolvedShellPath = resolveShellPath()
 
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = req.url || ''
@@ -115,12 +159,7 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
       if (url === '/api/axon/preflight') {
         const checks: { id: string; label: string; status: 'pass' | 'warn' | 'fail'; detail: string; action?: string; actionType?: string }[] = []
 
-        // Electron apps have a restricted PATH — resolve the user's login shell PATH
-        let shellPath = process.env.PATH || ''
-        try {
-          const shell = process.env.SHELL || '/bin/zsh'
-          shellPath = execSync(`${shell} -lc 'printenv PATH'`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 3000 }).trim()
-        } catch { /* fall back to process.env.PATH */ }
+        const shellPath = resolvedShellPath
         const execOpts = { stdio: 'pipe' as const, env: { ...process.env, PATH: shellPath }, timeout: 5000 }
 
         // 1. Axon home exists
@@ -150,7 +189,6 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         let isLinkedDev = false
         try {
           const axonPath = execSync('which axon', { ...execOpts, encoding: 'utf-8', timeout: 5000 }).trim()
-          const { lstatSync, realpathSync } = await import('fs')
           const stat = lstatSync(axonPath)
           if (stat.isSymbolicLink()) {
             const realPath = realpathSync(axonPath)
@@ -257,12 +295,7 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         })
         const { actionType } = JSON.parse(body) as { actionType: string }
 
-        // Resolve login shell PATH for npm commands
-        let shellPath = process.env.PATH || ''
-        try {
-          const shell = process.env.SHELL || '/bin/zsh'
-          shellPath = execSync(`${shell} -lc 'printenv PATH'`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 3000 }).trim()
-        } catch { /* fallback */ }
+        const shellPath = resolvedShellPath
         const execOpts = { encoding: 'utf-8' as const, env: { ...process.env, PATH: shellPath }, timeout: 60_000, stdio: 'pipe' as const }
 
         try {
@@ -299,8 +332,15 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
             res.end(JSON.stringify({ ok: false, error: 'Unknown action' }))
           }
         } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Action failed'
+          const isPermission = msg.includes('EACCES') || msg.includes('permission denied') || msg.includes('Please try running')
           res.statusCode = 500
-          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : 'Action failed' }))
+          res.end(JSON.stringify({
+            ok: false,
+            error: isPermission
+              ? 'Permission denied. Try: sudo npm install -g axon-dev, or fix npm permissions: https://docs.npmjs.com/resolving-eacces-permissions-errors'
+              : msg,
+          }))
         }
         return
       }
@@ -308,6 +348,10 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
       // GET /api/axon/projects
       if (url === '/api/axon/projects') {
         const wsDir = join(AXON_HOME, 'workspaces')
+        if (!existsSync(wsDir)) {
+          res.end(JSON.stringify([]))
+          return
+        }
         const entries = await readdir(wsDir, { withFileTypes: true })
         const projects = []
 
@@ -1190,30 +1234,51 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         }
 
         const home = homedir()
-        const scanDirs = ['Github', 'Projects', 'Developer', 'Code', 'repos', 'src', 'work']
+        const scanDirs = [
+          'Github', 'Projects', 'Developer', 'Code', 'repos', 'src', 'work',
+          'dev', 'code', 'workspace', 'workspaces', 'git',
+          join('Documents', 'GitHub'), join('Documents', 'Projects'),
+        ]
           .map(d => join(home, d))
           .filter(d => existsSync(d))
+          // Deduplicate (case-insensitive filesystems may overlap)
+          .filter((d, i, arr) => arr.indexOf(d) === i)
 
+        const MAX_REPOS = 200
         const repos: { name: string; path: string; remote: string; commitCount: number; lastActivity: string }[] = []
         const seen = new Set<string>()
 
         const addRepo = (repoPath: string, name: string) => {
-          if (seen.has(repoPath)) return
-          seen.add(repoPath)
+          if (repos.length >= MAX_REPOS) return
+          // Resolve symlinks for dedup
+          let realPath = repoPath
+          try { realPath = realpathSync(repoPath) } catch {}
+          if (seen.has(realPath)) return
+          seen.add(realPath)
 
           let remote = ''
-          try { remote = execSync(`git -C "${repoPath}" remote get-url origin 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+          try { remote = execSync(`git -C "${repoPath}" remote get-url origin 2>/dev/null`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
 
           let commitCount = 0
-          try { commitCount = parseInt(execSync(`git -C "${repoPath}" rev-list --count HEAD 2>/dev/null`, { encoding: 'utf-8' }).trim(), 10) || 0 } catch {}
+          try { commitCount = parseInt(execSync(`git -C "${repoPath}" rev-list --count HEAD 2>/dev/null`, { encoding: 'utf-8', timeout: 3000 }).trim(), 10) || 0 } catch {}
 
           let lastActivity = ''
-          try { lastActivity = execSync(`git -C "${repoPath}" log -1 --format=%ai 2>/dev/null`, { encoding: 'utf-8' }).trim() } catch {}
+          try { lastActivity = execSync(`git -C "${repoPath}" log -1 --format=%ai 2>/dev/null`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
 
           repos.push({ name, path: repoPath, remote, commitCount, lastActivity })
         }
 
+        const isDirEntry = (parentDir: string, entry: import('fs').Dirent): boolean => {
+          if (entry.isDirectory()) return true
+          // Follow symlinks to directories
+          if (entry.isSymbolicLink()) {
+            try { return statSync(join(parentDir, entry.name)).isDirectory() } catch { return false }
+          }
+          return false
+        }
+
         for (const dir of scanDirs) {
+          if (repos.length >= MAX_REPOS) break
           let entries: import('fs').Dirent[]
           try {
             entries = await readdir(dir, { withFileTypes: true })
@@ -1221,7 +1286,8 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
             continue
           }
           for (const entry of entries) {
-            if (!entry.isDirectory()) continue
+            if (repos.length >= MAX_REPOS) break
+            if (!isDirEntry(dir, entry)) continue
             const childPath = join(dir, entry.name)
 
             if (existsSync(join(childPath, '.git'))) {
@@ -1232,7 +1298,8 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
               try {
                 const subEntries = await readdir(childPath, { withFileTypes: true })
                 for (const sub of subEntries) {
-                  if (!sub.isDirectory()) continue
+                  if (repos.length >= MAX_REPOS) break
+                  if (!isDirEntry(childPath, sub)) continue
                   const subPath = join(childPath, sub.name)
                   if (existsSync(join(subPath, '.git'))) {
                     addRepo(subPath, sub.name)
@@ -1786,25 +1853,41 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
           req.on('end', () => resolve(data))
         })
 
-        const { projectName, projectPath } = JSON.parse(body) as {
+        let { projectName, projectPath } = JSON.parse(body) as {
           projectName: string
           projectPath: string
         }
 
-        const wsPath = join(AXON_HOME, 'workspaces', projectName)
+        // Sanitize project name — strip YAML-unsafe characters
+        projectName = projectName.replace(/[^a-zA-Z0-9._-]/g, '-')
 
-        // If workspace already exists, return early
+        // Handle name collisions — if workspace exists for a DIFFERENT path, disambiguate
+        const wsDir = join(AXON_HOME, 'workspaces')
+        let wsPath = join(wsDir, projectName)
         if (existsSync(join(wsPath, 'config.yaml'))) {
-          res.end(JSON.stringify({ name: projectName, status: 'exists' }))
-          return
+          // Check if it's the same project path
+          try {
+            const existingCfg = readFileSync(join(wsPath, 'config.yaml'), 'utf-8')
+            const existingPath = existingCfg.match(/^project_path:\s*['"]?(.+?)['"]?\s*$/m)?.[1]?.trim()
+            if (existingPath === projectPath) {
+              res.end(JSON.stringify({ name: projectName, status: 'exists' }))
+              return
+            }
+          } catch {}
+          // Different path — disambiguate with parent folder name
+          const parentDir = projectPath.split('/').slice(-2, -1)[0] || 'project'
+          const disambiguated = `${parentDir}-${projectName}`.replace(/[^a-zA-Z0-9._-]/g, '-')
+          projectName = disambiguated
+          wsPath = join(wsDir, projectName)
+          // If even the disambiguated name exists, bail
+          if (existsSync(join(wsPath, 'config.yaml'))) {
+            res.end(JSON.stringify({ name: projectName, status: 'exists' }))
+            return
+          }
         }
 
         // Pre-check: Claude CLI must be available for genesis
-        let shellPath = process.env.PATH || ''
-        try {
-          const shell = process.env.SHELL || '/bin/zsh'
-          shellPath = execSync(`${shell} -lc 'printenv PATH'`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 3000 }).trim()
-        } catch { /* fallback */ }
+        const shellPath = resolvedShellPath
         let claudeAvailable = false
         try {
           execSync('which claude', { stdio: 'pipe', env: { ...process.env, PATH: shellPath }, timeout: 5000 })
@@ -1819,8 +1902,8 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
 
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
         const configYaml = [
-          `project: ${projectName}`,
-          `project_path: ${projectPath}`,
+          `project: "${projectName.replace(/"/g, '\\"')}"`,
+          `project_path: "${projectPath.replace(/"/g, '\\"')}"`,
           `created_at: ${new Date().toISOString()}`,
           `status: active`,
           ``,
@@ -1959,11 +2042,7 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         }
 
         // Pre-check: Claude CLI must be available for genesis
-        let shellPath = process.env.PATH || ''
-        try {
-          const shell = process.env.SHELL || '/bin/zsh'
-          shellPath = execSync(`${shell} -lc 'printenv PATH'`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 3000 }).trim()
-        } catch { /* fallback */ }
+        const shellPath = resolvedShellPath
         try {
           execSync('which claude', { stdio: 'pipe', env: { ...process.env, PATH: shellPath }, timeout: 5000 })
         } catch {
@@ -1984,6 +2063,13 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
 
         const cliDir = config.cliDir || resolve(process.cwd(), '..', 'cli')
         const initScript = join(cliDir, 'axon-init')
+        const wsPath = join(AXON_HOME, 'workspaces', projectName)
+
+        // Write genesis-lock so init-status can track progress even if SSE disconnects
+        mkdirSync(join(wsPath, 'episodes'), { recursive: true })
+        mkdirSync(join(wsPath, 'dendrites'), { recursive: true })
+        mkdirSync(join(wsPath, 'mornings'), { recursive: true })
+        writeFileSync(join(wsPath, '.genesis-lock'), JSON.stringify({ status: 'running', startedAt: new Date().toISOString() }))
 
         const child = spawn(initScript, [], {
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -1991,38 +2077,63 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
           cwd: projectPath,
         })
 
+        let clientConnected = true
+
         child.stdout.on('data', (data: Buffer) => {
+          if (!clientConnected) return
           const text = data.toString()
-          res.write(`data: ${JSON.stringify({ type: 'progress', text })}\n\n`)
+          try { res.write(`data: ${JSON.stringify({ type: 'progress', text })}\n\n`) } catch {}
         })
 
         child.stderr.on('data', (data: Buffer) => {
+          if (!clientConnected) return
           const text = data.toString()
-          res.write(`data: ${JSON.stringify({ type: 'log', text })}\n\n`)
+          try { res.write(`data: ${JSON.stringify({ type: 'log', text })}\n\n`) } catch {}
         })
 
         await new Promise<void>((resolveInit) => {
           child.on('close', async (code) => {
-            if (code === 0) {
+            // Update genesis-lock
+            try {
+              writeFileSync(join(wsPath, '.genesis-lock'), JSON.stringify(
+                code === 0 ? { status: 'complete' } : { status: 'failed', error: `Process exited with code ${code}` }
+              ))
+            } catch {}
+
+            if (clientConnected) {
+              if (code === 0) {
+                try {
+                  const genesisPath = join(AXON_HOME, 'workspaces', projectName, 'episodes', '0000_genesis.md')
+                  const genesisContent = await readFile(genesisPath, 'utf-8')
+                  res.write(`data: ${JSON.stringify({ type: 'content', text: genesisContent })}\n\n`)
+                } catch {}
+              }
               try {
-                const genesisPath = join(AXON_HOME, 'workspaces', projectName, 'episodes', '0000_genesis.md')
-                const genesisContent = await readFile(genesisPath, 'utf-8')
-                res.write(`data: ${JSON.stringify({ type: 'content', text: genesisContent })}\n\n`)
+                res.write(`data: ${JSON.stringify({ type: 'done', code })}\n\n`)
+                res.end()
               } catch {}
             }
-            res.write(`data: ${JSON.stringify({ type: 'done', code })}\n\n`)
-            res.end()
             resolveInit()
           })
 
           child.on('error', (err) => {
-            res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`)
-            res.end()
+            try {
+              writeFileSync(join(wsPath, '.genesis-lock'), JSON.stringify({ status: 'failed', error: err.message }))
+            } catch {}
+            if (clientConnected) {
+              try {
+                res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`)
+                res.end()
+              } catch {}
+            }
             resolveInit()
           })
 
           req.on('close', () => {
-            if (!child.killed) child.kill()
+            // Don't kill the child — let genesis complete in background
+            // Client can poll /api/axon/init-status to check completion
+            clientConnected = false
+            child.unref()
             resolveInit()
           })
         })

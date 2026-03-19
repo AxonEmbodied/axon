@@ -1,5 +1,5 @@
 import { type ReactNode, useState, useEffect, useRef } from 'react'
-import { Coffee, Brain, Clock } from 'lucide-react'
+import { Coffee, Brain, Clock, Plus } from 'lucide-react'
 import { DataProvider } from '@/providers/DataProvider'
 import { Shell } from '@/components/layout/Shell'
 import { TimelineView } from '@/views/TimelineView'
@@ -128,6 +128,9 @@ function ViewRouter() {
     }
   }, [activeProject, activeView, projects, setView])
 
+  const loading = useProjectStore(s => s.loading)
+  const noProjects = !loading && projects.length === 0
+
   // Strip index tracking
   const stripIdx = STRIP.indexOf(activeView)
   const isStrip = stripIdx >= 0
@@ -142,6 +145,29 @@ function ViewRouter() {
   }, [currentIdx])
 
   const isSubView = !isStrip
+
+  // Empty state: no projects after loading completes
+  if (noProjects && activeView !== 'settings' && activeView !== 'onboarding') {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center max-w-sm mx-auto px-6">
+          <h2 className="font-serif italic text-h2 text-ax-text-primary mb-2">Welcome to Axon</h2>
+          <p className="text-body text-ax-text-secondary mb-6">
+            Add your first project to get started with nightly rollups, morning briefings, and decision traces.
+          </p>
+          <button
+            onClick={() => setView('onboarding')}
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg
+              bg-ax-brand text-white font-mono text-small
+              hover:bg-ax-brand-hover transition-colors"
+          >
+            <Plus size={14} />
+            Add your first project
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative h-full w-full overflow-hidden">
