@@ -24,7 +24,17 @@ function useReadme() {
       headers: { Accept: 'application/vnd.github.v3.html' },
     })
       .then(r => r.ok ? r.text() : null)
-      .then(html => { setReadme(html); setLoading(false) })
+      .then(html => {
+        if (html) {
+          // Fix relative image/gif paths → raw GitHub content URLs
+          html = html.replace(
+            /src="(docs\/[^"]+)"/g,
+            'src="https://raw.githubusercontent.com/AxonEmbodied/AXON/main/$1"'
+          )
+        }
+        setReadme(html)
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [])
 
