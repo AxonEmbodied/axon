@@ -41,11 +41,27 @@ export function installAuthInterceptor() {
       }
     }
 
-    const res = await originalFetch(input, init as RequestInit)
+    let res: Response
+    try {
+      res = await originalFetch(input, init as RequestInit)
+    } catch (err) {
+      // Network error (server down, no connectivity)
+      if (url.startsWith('/api/axon')) {
+        const { useErrorStore } = await import('@/store/errorStore')
+        useErrorStore.getState().showError('Server unreachable', { source: 'network', detail: url })
+      }
+      throw err
+    }
 
     // On 401, trigger auth overlay (not for login/config endpoints)
     if (res.status === 401 && url.startsWith('/api/axon') && !url.includes('/login') && !url.includes('server-config')) {
       onAuthRequired?.()
+    }
+
+    // Surface server errors (5xx)
+    if (res.status >= 500 && url.startsWith('/api/axon')) {
+      const { useErrorStore } = await import('@/store/errorStore')
+      useErrorStore.getState().showError(`Server error (${res.status})`, { source: 'server', detail: url })
     }
 
     return res

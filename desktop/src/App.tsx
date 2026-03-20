@@ -20,6 +20,9 @@ import { IntroSplash } from '@/components/shared/IntroSplash'
 import { PreflightCheck } from '@/components/shared/PreflightCheck'
 import { AuthOverlay } from '@/components/shared/AuthOverlay'
 import { setAuthHandler, installAuthInterceptor } from '@/lib/apiClient'
+import { ErrorToast } from '@/components/shared/ErrorToast'
+import { useErrorStore } from '@/store/errorStore'
+import { Component, type ErrorInfo } from 'react'
 
 // Install global fetch interceptor ONCE — injects auth headers on all /api/axon/* calls
 installAuthInterceptor()
@@ -242,15 +245,58 @@ function AuthGate() {
   )
 }
 
+/* ── Error Boundary ─────────────────────────────────────────────── */
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  state = { hasError: false, error: null as Error | null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    useErrorStore.getState().showError(error.message, {
+      source: 'client',
+      detail: info.componentStack?.slice(0, 200) || undefined,
+    })
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen flex items-center justify-center bg-ax-base">
+          <div className="max-w-sm text-center px-6">
+            <div className="w-12 h-12 rounded-xl bg-[var(--ax-error)]/10 flex items-center justify-center mx-auto mb-4">
+              <span className="text-[var(--ax-error)] text-xl">!</span>
+            </div>
+            <h1 className="font-serif italic text-[20px] text-ax-text-primary mb-2">Something went wrong</h1>
+            <p className="text-[13px] text-ax-text-tertiary mb-4">{this.state.error?.message}</p>
+            <button
+              onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
+              className="px-4 py-2 bg-ax-brand text-white rounded-lg font-mono text-small hover:bg-ax-brand-hover transition-colors"
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export default function App() {
   return (
-    <DataProvider>
-      <Shell>
-        <ViewRouter />
-      </Shell>
-      <IntroSplash />
-      <PreflightCheck />
-      <AuthGate />
-    </DataProvider>
+    <ErrorBoundary>
+      <DataProvider>
+        <Shell>
+          <ViewRouter />
+        </Shell>
+        <IntroSplash />
+        <PreflightCheck />
+        <AuthGate />
+        <ErrorToast />
+      </DataProvider>
+    </ErrorBoundary>
   )
 }
