@@ -4,7 +4,7 @@ import { CanvasTerminal } from './CanvasTerminal'
 import { useTerminalStore } from '@/store/terminalStore'
 import {
   GRID, TILE_W, TILE_H, TILE_EXPANDED_W, TILE_EXPANDED_H, TILE_MINIMIZED_W, TILE_MINIMIZED_H,
-  snap, getZoneDepth, getDescendantZoneIds,
+  snap, getZoneDepth, getDescendantZoneIds, isAncestorOf,
   computeZoneLayouts,
   type TileState, type ZoneState, type TileAction, type ZoneAction, type ZoneLayout,
 } from './zoneReducers'
@@ -563,6 +563,14 @@ export function CanvasView({
           for (const tile of zonedTiles) {
             dispatchTiles({ type: 'MOVE', sessionId: tile.sessionId, x: tile.x + zoneDx, y: tile.y + zoneDy })
           }
+          // Show hover indicator when dragging zone over another zone
+          const layout = zoneLayouts.get(d.targetId)
+          const zoneCx = newX + (layout?.width || 200) / 2
+          const zoneCy = newY + (layout?.height || 72) / 2
+          const hitZone = findZoneAtWorldPoint(zoneCx, zoneCy, d.targetId)
+          // Prevent circular nesting
+          const safeHit = hitZone && !isAncestorOf(d.targetId, hitZone, zones) ? hitZone : null
+          setHoverZoneId(safeHit)
         }
       } else if (d.type === 'resize' && d.targetId) {
         const dxW = (e.clientX - d.startMouseX) / v.scale
@@ -641,7 +649,22 @@ export function CanvasView({
           // Trigger drop settle animation
           setDroppedTileId(d.targetId!)
           immediateSave()
-        } else if (d.type === 'zone') {
+        } else if (d.type === 'zone' && d.targetId) {
+          // Check if zone was dropped onto another zone → reparent
+          const zone = zones.find(z => z.id === d.targetId)
+          if (zone) {
+            const layout = zoneLayouts.get(d.targetId)
+            const zoneCx = zone.x + (layout?.width || 200) / 2
+            const zoneCy = zone.y + (layout?.height || 72) / 2
+            const hitZone = findZoneAtWorldPoint(zoneCx, zoneCy, d.targetId)
+            const currentParent = zone.parentZoneId || null
+            // Prevent circular nesting and self-nesting
+            const safeHit = hitZone && !isAncestorOf(d.targetId, hitZone, zones) ? hitZone : null
+            if (safeHit !== currentParent) {
+              dispatchZones({ type: 'REPARENT', id: d.targetId, parentZoneId: safeHit })
+              if (safeHit) setFlashZoneId(safeHit)
+            }
+          }
           immediateSave()
         } else if (d.type === 'pan') {
           setViewport({ ...viewportRef.current })
