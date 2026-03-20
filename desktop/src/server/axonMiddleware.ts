@@ -1204,11 +1204,12 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         ].join('\n')
 
         const args = continueSession
-          ? ['--continue', '-p', prompt, '--allowedTools', 'Read,Glob,Grep,Bash']
-          : ['-p', prompt, '--system-prompt', systemPrompt, '--allowedTools', 'Read,Glob,Grep,Bash']
+          ? ['--continue', '-p', prompt, '--verbose', '--output-format', 'stream-json', '--allowedTools', 'Read,Glob,Grep,Bash', '--max-budget-usd', '0.50']
+          : ['-p', prompt, '--system-prompt', systemPrompt, '--verbose', '--output-format', 'stream-json', '--allowedTools', 'Read,Glob,Grep,Bash', '--max-budget-usd', '0.50']
 
-        // Use a dedicated project path to avoid polluting other projects
-        args.push('--project-path', '/axon/search')
+        // Use a dedicated cwd to isolate search sessions from other projects
+        const searchDir = join(AXON_HOME, 'search')
+        mkdirSync(searchDir, { recursive: true })
 
         const cleanEnv = { ...process.env }
         delete cleanEnv.CLAUDECODE
@@ -1217,19 +1218,46 @@ export function createAxonMiddleware(config: AxonMiddlewareConfig) {
         const child = spawn('claude', args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: cleanEnv,
+          cwd: searchDir,
         })
 
+        let stdoutBuf = ''
         child.stdout.on('data', (data: Buffer) => {
-          const text = data.toString()
-          res.write(`data: ${JSON.stringify({ type: 'content', text })}\n\n`)
+          stdoutBuf += data.toString()
+          // Parse stream-json: each line is a JSON object
+          const lines = stdoutBuf.split('\n')
+          stdoutBuf = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const msg = JSON.parse(line)
+              // Extract text from assistant messages
+              if (msg.type === 'assistant' && msg.message?.content) {
+                const content = msg.message.content
+                if (typeof content === 'string') {
+                  res.write(`data: ${JSON.stringify({ type: 'content', text: content })}\n\n`)
+                } else if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (block.type === 'text' && block.text) {
+                      res.write(`data: ${JSON.stringify({ type: 'content', text: block.text })}\n\n`)
+                    }
+                  }
+                }
+              }
+            } catch { /* not valid JSON yet */ }
+          }
         })
 
-        child.stderr.on('data', () => {
-          // Claude CLI progress — ignore
+        let searchStderr = ''
+        child.stderr.on('data', (data: Buffer) => {
+          searchStderr += data.toString()
         })
 
         await new Promise<void>((resolve) => {
           child.on('close', (code) => {
+            if (code !== 0 && searchStderr.trim()) {
+              res.write(`data: ${JSON.stringify({ type: 'content', text: `\n\n**Search failed** (exit ${code}): ${searchStderr.trim().slice(0, 500)}` })}\n\n`)
+            }
             res.write(`data: ${JSON.stringify({ type: 'done', code })}\n\n`)
             res.end()
             resolve()
