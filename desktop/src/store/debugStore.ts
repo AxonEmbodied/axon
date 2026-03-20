@@ -10,31 +10,23 @@ export interface DebugAction {
 interface DebugStore {
   actions: Map<string, DebugAction>
   screenshotMode: boolean
+  hiddenProjects: Set<string>
   register: (action: DebugAction) => void
   unregister: (id: string) => void
   isActive: (id: string) => boolean
   toggleScreenshotMode: () => void
+  toggleHiddenProject: (name: string) => void
 }
 
-const GENERIC_NAMES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'India', 'Juliet', 'Kilo', 'Lima', 'Mike', 'November', 'Oscar', 'Papa']
-const nameMap = new Map<string, string>()
-let nameIdx = 0
-
-/** Returns a stable generic name for a project name when in screenshot mode */
-export function maskProjectName(name: string, active: boolean): string {
-  if (!active) return name
-  let masked = nameMap.get(name)
-  if (!masked) {
-    masked = `Project ${GENERIC_NAMES[nameIdx % GENERIC_NAMES.length]}`
-    nameMap.set(name, masked)
-    nameIdx++
-  }
-  return masked
+/** Check if a project is hidden in screenshot mode */
+export function isProjectHidden(name: string, hiddenSet: Set<string>): boolean {
+  return hiddenSet.has(name)
 }
 
 export const useDebugStore = create<DebugStore>((set, get) => ({
   actions: new Map(),
   screenshotMode: false,
+  hiddenProjects: new Set(),
   register: (action) => set((s) => {
     const next = new Map(s.actions)
     next.set(action.id, action)
@@ -46,5 +38,13 @@ export const useDebugStore = create<DebugStore>((set, get) => ({
     return { actions: next }
   }),
   isActive: (id) => get().actions.get(id)?.active ?? false,
-  toggleScreenshotMode: () => set(s => ({ screenshotMode: !s.screenshotMode })),
+  toggleScreenshotMode: () => set(s => {
+    if (s.screenshotMode) return { screenshotMode: false, hiddenProjects: new Set() }
+    return { screenshotMode: !s.screenshotMode }
+  }),
+  toggleHiddenProject: (name) => set(s => {
+    const next = new Set(s.hiddenProjects)
+    if (next.has(name)) next.delete(name); else next.add(name)
+    return { hiddenProjects: next }
+  }),
 }))

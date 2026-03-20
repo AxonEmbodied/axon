@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { useProjects } from '@/hooks/useProjects'
 import { useProjectStore } from '@/store/projectStore'
 import { useUIStore, type ViewId } from '@/store/uiStore'
-import { useDebugStore, maskProjectName } from '@/store/debugStore'
+import { useDebugStore } from '@/store/debugStore'
 import { useDiscoveredRepos } from '@/hooks/useDiscoveredRepos'
-import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, GitBranch, GripVertical, HelpCircle, X, Globe } from 'lucide-react'
+import { Clock, Settings, Search, Sun, Moon, Coffee, Plus, Terminal, Brain, PanelLeftClose, PanelLeftOpen, Keyboard, CheckSquare, GitBranch, GripVertical, HelpCircle, X, Globe, EyeOff } from 'lucide-react'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 
 const HINT_STORAGE_KEY = 'axon-shortcut-hints-dismissed'
@@ -154,11 +154,13 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
   }, [hintsDismissed, debugRegister, debugUnregister])
 
   const screenshotMode = useDebugStore(s => s.screenshotMode)
+  const hiddenProjects = useDebugStore(s => s.hiddenProjects)
   const toggleScreenshotMode = useDebugStore(s => s.toggleScreenshotMode)
+  const toggleHiddenProject = useDebugStore(s => s.toggleHiddenProject)
   useEffect(() => {
     debugRegister({
       id: 'screenshot-mode',
-      label: `Screenshot mode (${screenshotMode ? 'on' : 'off'})`,
+      label: `Screenshot mode (${screenshotMode ? 'on — click projects to hide' : 'off'})`,
       active: screenshotMode,
       toggle: toggleScreenshotMode,
     })
@@ -278,7 +280,9 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
             )}
           </div>
           <div ref={listRef} className="overflow-y-auto max-h-[40vh]">
-          {(dragIdx !== null && dragThreshold.current ? getDragOrder() : (showArchived ? [...activeProjects, ...archivedProjects] : activeProjects)).map((p, _i) => {
+          {(dragIdx !== null && dragThreshold.current ? getDragOrder() : (showArchived ? [...activeProjects, ...archivedProjects] : activeProjects))
+            .filter(p => !screenshotMode || !hiddenProjects.has(p.name))
+            .map((p, _i) => {
             const isToday = p.lastRollup === today
             const isArchived = p.status === 'archived'
             const isGenesis = p.episodeCount === 0 && p.genesisStatus === 'running'
@@ -316,8 +320,16 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
                   p.status === 'active' ? 'bg-ax-accent' :
                   p.status === 'paused' ? 'bg-ax-warning' : 'bg-ax-text-tertiary'
                 } ${isToday && !isGenesis ? 'animate-pulse-dot' : ''}`} aria-hidden="true" />
-                <span className="font-mono text-micro truncate">{maskProjectName(p.name, screenshotMode)}</span>
-                {isGenesis ? (
+                <span className="font-mono text-micro truncate">{p.name}</span>
+                {screenshotMode ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleHiddenProject(p.name) }}
+                    className="ml-auto text-[var(--ax-text-on-dark-muted)] hover:text-[var(--ax-error)] transition-colors"
+                    aria-label={`Hide ${p.name}`}
+                  >
+                    <EyeOff size={10} />
+                  </button>
+                ) : isGenesis ? (
                   <span className="ml-auto font-mono text-[9px] text-[var(--ax-brand-primary)] opacity-60">init...</span>
                 ) : p.openLoopCount > 0 ? (
                   <span className="ml-auto font-mono text-micro bg-white/10 px-1.5 py-0.5 rounded" aria-hidden="true">
