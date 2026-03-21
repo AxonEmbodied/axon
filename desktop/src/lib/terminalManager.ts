@@ -1,6 +1,6 @@
 import * as pty from 'node-pty'
 import { execSync } from 'node:child_process'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const LOG_FILE = join(process.env.HOME || '/tmp', '.axon', 'terminal-debug.log')
@@ -54,12 +54,8 @@ export function spawnTerminal(cwd: string, _command?: string, sessionId?: string
   // Determine the command to run inside the shell
   // Note: `command` parameter is ignored for security — only allow claude or claude --resume
   // Prefer npm/standalone claude over Homebrew Cask (Cask native binary hangs in node-pty)
-  const claudeBin = (() => {
-    const { existsSync } = require('fs')
-    const npmClaude = join(process.env.HOME || '/Users/rob', '.local', 'bin', 'claude')
-    if (existsSync(npmClaude)) return npmClaude
-    return 'claude' // fallback to PATH
-  })()
+  const npmClaude = join(process.env.HOME || '', '.local', 'bin', 'claude')
+  const claudeBin = existsSync(npmClaude) ? npmClaude : 'claude'
 
   let cmd: string
   if (sessionId) {
