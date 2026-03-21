@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
 interface ConfirmOption {
   label: string
@@ -16,6 +17,7 @@ interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog({ title, message, options, onSelect, onCancel }: ConfirmDialogProps) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true)
   const handleKey = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onCancel()
   }, [onCancel])
@@ -27,6 +29,7 @@ export function ConfirmDialog({ title, message, options, onSelect, onCancel }: C
 
   return createPortal(
     <div
+      ref={trapRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
       onClick={onCancel}
       role="alertdialog"

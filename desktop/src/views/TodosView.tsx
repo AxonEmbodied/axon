@@ -415,6 +415,9 @@ function TodoCard({ item, onUpdate }: {
       >
         {/* Checkbox */}
         <button
+          role="checkbox"
+          aria-checked={isCompleted}
+          aria-label={`Mark "${item.description.slice(0, 40)}" as ${isCompleted ? 'incomplete' : 'complete'}`}
           onClick={() => {
             if (item.status === 'active') onUpdate(item.id, 'complete')
           }}

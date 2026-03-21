@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useProjectStore } from '@/store/projectStore'
 import { useUIStore } from '@/store/uiStore'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { Clock, Layers, Brain, Settings, Sun, Moon, FolderOpen, Coffee, Terminal, Search, Sparkles, MessageSquare } from 'lucide-react'
 
 interface Command {
@@ -38,6 +39,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const trapRef = useFocusTrap<HTMLDivElement>(open)
 
   const { projects, setActiveProject } = useProjectStore()
   const { setView, theme, toggleTheme, openTerminal } = useUIStore()
@@ -226,6 +228,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
       {/* Palette */}
       <div
+        ref={trapRef}
         className="fixed top-4 sm:top-[20%] left-2 right-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-full max-w-lg z-50 animate-fade-in"
         role="dialog"
         aria-label="Command palette"
