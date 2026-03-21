@@ -4,6 +4,7 @@ import {
   setWsConnected,
   killTerminal,
   resizeTerminal,
+  consumeEarlyState,
 } from './terminalManager'
 
 export function setupTerminalWs(wss: WebSocketServer): void {
@@ -16,7 +17,20 @@ export function setupTerminalWs(wss: WebSocketServer): void {
 
     setWsConnected(termId, true)
 
-    // PTY output → WebSocket
+    // Replay early buffer (output that arrived before WS connected)
+    const { buffer, pendingCmd } = consumeEarlyState(termId)
+    for (const chunk of buffer) {
+      if (ws.readyState === ws.OPEN) ws.send(chunk)
+    }
+
+    // Now write the pending command (deferred from spawn)
+    if (pendingCmd) {
+      setTimeout(() => {
+        instance.pty.write(pendingCmd + '\n')
+      }, 300) // small delay for shell profile to finish loading
+    }
+
+    // PTY output → WebSocket (live from now on)
     const dataHandler = instance.pty.onData((data: string) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data)

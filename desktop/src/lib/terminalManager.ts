@@ -16,6 +16,8 @@ interface TerminalInstance {
   cwd: string
   createdAt: number
   wsConnected: boolean
+  pendingCmd: string | null    // command to write once WS connects
+  earlyBuffer: string[]        // PTY output before WS connected
 }
 
 const terminals = new Map<string, TerminalInstance>()
@@ -81,11 +83,25 @@ export function spawnTerminal(cwd: string, _command?: string, sessionId?: string
       env: cleanEnv,
     })
 
-    // Log all output and exit for debugging
+    // Buffer early PTY output — replayed when WebSocket connects
+    const entry: TerminalInstance = {
+      pty: ptyProcess,
+      id,
+      cwd,
+      createdAt: Date.now(),
+      wsConnected: false,
+      pendingCmd: cmd,
+      earlyBuffer: [],
+    }
+
+    // Capture output before WebSocket connects
     let earlyOutput = ''
     const earlyListener = ptyProcess.onData((data: string) => {
       earlyOutput += data
-      if (earlyOutput.length > 5000) earlyListener.dispose()
+      if (!entry.wsConnected) {
+        entry.earlyBuffer.push(data)
+      }
+      if (earlyOutput.length > 50000) earlyListener.dispose()
     })
 
     ptyProcess.onExit(({ exitCode, signal }) => {
@@ -93,18 +109,10 @@ export function spawnTerminal(cwd: string, _command?: string, sessionId?: string
       debugLog(`[Axon Terminal] Full output (${earlyOutput.length} chars): ${earlyOutput.slice(0, 2000)}`)
     })
 
-    // Write the command after a short delay to let shell profile load
-    setTimeout(() => {
-      ptyProcess.write(cmd + '\n')
-    }, 500)
+    // DON'T write the command here — wait for WebSocket to connect
+    // (see onWsConnected below)
 
-    terminals.set(id, {
-      pty: ptyProcess,
-      id,
-      cwd,
-      createdAt: Date.now(),
-      wsConnected: false,
-    })
+    terminals.set(id, entry)
 
     startHeartbeat()
     return id
@@ -125,6 +133,17 @@ export function getTerminal(id: string): TerminalInstance | undefined {
 export function setWsConnected(id: string, connected: boolean): void {
   const t = terminals.get(id)
   if (t) t.wsConnected = connected
+}
+
+/** Get and clear the early output buffer + pending command for replay on WS connect */
+export function consumeEarlyState(id: string): { buffer: string[]; pendingCmd: string | null } {
+  const t = terminals.get(id)
+  if (!t) return { buffer: [], pendingCmd: null }
+  const buffer = [...t.earlyBuffer]
+  const pendingCmd = t.pendingCmd
+  t.earlyBuffer = []
+  t.pendingCmd = null
+  return { buffer, pendingCmd }
 }
 
 export function resizeTerminal(id: string, cols: number, rows: number): void {
