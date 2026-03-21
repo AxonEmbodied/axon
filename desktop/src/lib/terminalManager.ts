@@ -132,7 +132,10 @@ export function getTerminal(id: string): TerminalInstance | undefined {
 
 export function setWsConnected(id: string, connected: boolean): void {
   const t = terminals.get(id)
-  if (t) t.wsConnected = connected
+  if (t) {
+    debugLog(`[Axon Terminal] WS ${connected ? 'connected' : 'disconnected'} for ${id}`)
+    t.wsConnected = connected
+  }
 }
 
 /** Get and clear the early output buffer + pending command for replay on WS connect */
@@ -172,9 +175,10 @@ export function killAllTerminals(): void {
 function cleanStale(): void {
   const now = Date.now()
   for (const [id, t] of terminals) {
-    // Kill terminals disconnected for >60s (but give 10s for initial connection)
-    if (!t.wsConnected && now - t.createdAt > 60_000) {
-      console.log(`[Axon Terminal] Cleaning stale terminal ${id}`)
+    const age = now - t.createdAt
+    // Kill terminals disconnected for >5 minutes (was 60s — too aggressive)
+    if (!t.wsConnected && age > 300_000) {
+      debugLog(`[Axon Terminal] Cleaning stale terminal ${id} (age=${Math.round(age/1000)}s, wsConnected=${t.wsConnected})`)
       t.pty.kill()
       terminals.delete(id)
     }
