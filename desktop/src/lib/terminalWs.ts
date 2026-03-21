@@ -7,20 +7,21 @@ import {
   consumeEarlyState,
 } from './terminalManager'
 
-const PING_INTERVAL = 10_000 // 10s — well under any idle timeout
+const PING_INTERVAL = 30_000 // 30s — tolerant of slow networks
 
 export function setupTerminalWs(wss: WebSocketServer): void {
-  // Server-side ping interval — keeps connections alive and detects dead clients
-  const aliveMap = new WeakMap<WebSocket, boolean>()
+  // Server-side ping — keeps connections alive, tolerates 2 missed pongs
+  const missCount = new WeakMap<WebSocket, number>()
 
   const pingTimer = setInterval(() => {
     for (const ws of wss.clients) {
-      if (!aliveMap.get(ws)) {
-        // Missed the last pong — connection is dead
+      const misses = missCount.get(ws) || 0
+      if (misses >= 3) {
+        // 3 missed pongs (90s) — connection is truly dead
         ws.terminate()
         continue
       }
-      aliveMap.set(ws, false)
+      missCount.set(ws, misses + 1)
       ws.ping()
     }
   }, PING_INTERVAL)
@@ -35,8 +36,8 @@ export function setupTerminalWs(wss: WebSocketServer): void {
     }
 
     // Mark alive for ping/pong keepalive
-    aliveMap.set(ws, true)
-    ws.on('pong', () => aliveMap.set(ws, true))
+    missCount.set(ws, 0)
+    ws.on('pong', () => missCount.set(ws, 0))
 
     setWsConnected(termId, true)
 
