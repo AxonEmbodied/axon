@@ -743,7 +743,8 @@ export function CanvasView({
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 relative overflow-hidden"
+      className="flex-1 min-h-0 relative overflow-hidden touch-none"
+      data-canvas-container
       style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
       onMouseDown={handleMouseDown}
       onDragOver={handleDragOver}

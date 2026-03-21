@@ -61,7 +61,7 @@ export function AgentView() {
     <div className="flex h-full">
       {/* Sidebar — FileTree */}
       {activeProject && (
-        <div className="w-56 shrink-0 border-r border-ax-border bg-ax-elevated overflow-hidden">
+        <div className="hidden sm:block w-56 shrink-0 border-r border-ax-border bg-ax-elevated overflow-hidden">
           <FileTree project={activeProject} onFileReference={handleFileReference} />
         </div>
       )}

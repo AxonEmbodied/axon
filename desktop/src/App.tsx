@@ -65,7 +65,7 @@ function StripPane({
         willChange: 'transform',
       }}
     >
-      <div className={FULL_BLEED.has(viewId as ViewId) ? 'h-full' : 'max-w-3xl mx-auto px-4 sm:px-8 py-6 sm:py-10 overflow-y-auto h-full'}>
+      <div className={FULL_BLEED.has(viewId as ViewId) ? 'h-full pb-16 sm:pb-0' : 'max-w-3xl mx-auto px-4 sm:px-8 py-6 sm:py-10 pb-20 sm:pb-10 overflow-y-auto h-full'}>
         {everActive ? children : null}
       </div>
     </div>

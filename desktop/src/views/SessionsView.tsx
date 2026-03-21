@@ -754,7 +754,7 @@ export function SessionsView() {
     <div className="flex h-full">
       {/* Zone tree sidebar — canvas mode only */}
       {mode === 'canvas' && activeProject && (
-        <div className="w-56 shrink-0 border-r border-ax-border bg-ax-elevated overflow-hidden">
+        <div className="hidden sm:block w-56 shrink-0 border-r border-ax-border bg-ax-elevated overflow-hidden">
           <ZoneTree
             sessions={sessions}
             tiles={canvasState.tiles}
