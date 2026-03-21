@@ -68,7 +68,7 @@ export function AuthOverlay({ visible, onAuthenticated }: AuthOverlayProps) {
   if (!visible) return null
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ax-base/95 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[95] flex items-start sm:items-center justify-center pt-[15vh] sm:pt-0 bg-ax-base/95 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Authentication required">
       <div className="max-w-sm w-full mx-4 animate-fade-in-up">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-ax-brand/10 flex items-center justify-center">

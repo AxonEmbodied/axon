@@ -29,6 +29,9 @@ export function ConfirmDialog({ title, message, options, onSelect, onCancel }: C
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
       onClick={onCancel}
+      role="alertdialog"
+      aria-modal="true"
+      aria-label={title}
     >
       <div
         className="bg-ax-elevated rounded-xl border border-ax-border p-6 max-w-sm w-full mx-4 shadow-xl animate-fade-in-up"
