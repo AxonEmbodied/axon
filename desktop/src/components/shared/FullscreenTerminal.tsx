@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Minimize2, ZoomIn, ZoomOut } from 'lucide-react'
+import { X, Minimize2, ZoomIn, ZoomOut, ChevronUp, ChevronDown, Clipboard } from 'lucide-react'
 import { useTerminalStore } from '@/store/terminalStore'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -127,6 +127,50 @@ export function FullscreenTerminal({ terminalId, onClose }: Props) {
   const zoomIn = useCallback(() => setFontSize(s => Math.min(24, s + 2)), [])
   const zoomOut = useCallback(() => setFontSize(s => Math.max(8, s - 2)), [])
 
+  // Special keys bar — Ctrl is a sticky modifier
+  const [ctrlActive, setCtrlActive] = useState(false)
+  const [ctrlLocked, setCtrlLocked] = useState(false)
+  const ctrlTapTime = useRef(0)
+
+  const handleCtrlTap = useCallback(() => {
+    const now = Date.now()
+    if (now - ctrlTapTime.current < 300) {
+      // Double tap → lock
+      setCtrlLocked(true)
+      setCtrlActive(true)
+    } else if (ctrlLocked) {
+      // Tap while locked → unlock
+      setCtrlLocked(false)
+      setCtrlActive(false)
+    } else {
+      // Single tap → toggle
+      setCtrlActive(a => !a)
+    }
+    ctrlTapTime.current = now
+  }, [ctrlLocked])
+
+  const injectKey = useCallback((key: string) => {
+    if (ctrlActive && key.length === 1) {
+      // Ctrl+key: send the control character (ASCII code - 64)
+      const code = key.toUpperCase().charCodeAt(0) - 64
+      if (code > 0 && code < 32) {
+        sendInput(terminalId, String.fromCharCode(code))
+      }
+      if (!ctrlLocked) setCtrlActive(false)
+    } else {
+      sendInput(terminalId, key)
+    }
+    xtermRef.current?.focus()
+  }, [terminalId, sendInput, ctrlActive, ctrlLocked])
+
+  const handlePaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text) sendInput(terminalId, text)
+      xtermRef.current?.focus()
+    } catch { /* clipboard permission denied */ }
+  }, [terminalId, sendInput])
+
   // Tap terminal container to focus (opens mobile keyboard)
   const handleTerminalTap = useCallback(() => {
     xtermRef.current?.focus()
@@ -204,6 +248,69 @@ export function FullscreenTerminal({ terminalId, onClose }: Props) {
             <X size={18} />
           </button>
         </div>
+      </div>
+
+      {/* Special keys bar */}
+      <div
+        className="flex items-center gap-1 px-2 py-1.5 bg-[#231f1b] border-b border-white/10 relative z-10"
+        onTouchStart={e => e.stopPropagation()}
+      >
+        {[
+          { label: 'Esc', key: '\x1b' },
+          { label: 'Tab', key: '\t' },
+        ].map(({ label, key }) => (
+          <button
+            key={label}
+            onClick={() => injectKey(key)}
+            onTouchEnd={(e) => { e.preventDefault(); injectKey(key) }}
+            className="flex-1 h-[36px] flex items-center justify-center rounded-md
+              bg-[#2C2420] border border-white/10 text-white/70 active:bg-white/15
+              font-mono text-[11px] transition-colors"
+          >
+            {label}
+          </button>
+        ))}
+        <button
+          onClick={handleCtrlTap}
+          onTouchEnd={(e) => { e.preventDefault(); handleCtrlTap() }}
+          className={`flex-1 h-[36px] flex items-center justify-center rounded-md
+            border font-mono text-[11px] transition-colors
+            ${ctrlActive
+              ? ctrlLocked
+                ? 'bg-[#C8956C] border-[#C8956C] text-[#1a1714] font-bold'
+                : 'bg-[#C8956C]/30 border-[#C8956C]/50 text-[#C8956C]'
+              : 'bg-[#2C2420] border-white/10 text-white/70 active:bg-white/15'
+            }`}
+        >
+          Ctrl{ctrlLocked ? '●' : ctrlActive ? '·' : ''}
+        </button>
+        <button
+          onClick={() => injectKey('\x1b[A')}
+          onTouchEnd={(e) => { e.preventDefault(); injectKey('\x1b[A') }}
+          className="flex-1 h-[36px] flex items-center justify-center rounded-md
+            bg-[#2C2420] border border-white/10 text-white/70 active:bg-white/15 transition-colors"
+          aria-label="Up arrow"
+        >
+          <ChevronUp size={16} />
+        </button>
+        <button
+          onClick={() => injectKey('\x1b[B')}
+          onTouchEnd={(e) => { e.preventDefault(); injectKey('\x1b[B') }}
+          className="flex-1 h-[36px] flex items-center justify-center rounded-md
+            bg-[#2C2420] border border-white/10 text-white/70 active:bg-white/15 transition-colors"
+          aria-label="Down arrow"
+        >
+          <ChevronDown size={16} />
+        </button>
+        <button
+          onClick={handlePaste}
+          onTouchEnd={(e) => { e.preventDefault(); handlePaste() }}
+          className="flex-1 h-[36px] flex items-center justify-center rounded-md
+            bg-[#2C2420] border border-white/10 text-white/70 active:bg-white/15 transition-colors"
+          aria-label="Paste from clipboard"
+        >
+          <Clipboard size={14} />
+        </button>
       </div>
 
       {/* Terminal — tap to focus/open keyboard */}
